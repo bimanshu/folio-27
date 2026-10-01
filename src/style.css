@@ -565,8 +565,8 @@ main {
   }
 
   .stage {
-    flex: none;
-    height: clamp(380px, 58svh, 520px);
+    min-height: 380px;
+    max-height: 640px;
     box-shadow:
       0 -3px 0 0 var(--ink),
       0 3px 0 0 var(--ink),
