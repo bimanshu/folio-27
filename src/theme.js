@@ -47,6 +47,13 @@ export function initTheme(onChange) {
     if (!explicit) apply(e.matches ? 'dark' : 'light', true);
   });
 
+  // If something else flips the attribute (e.g. a page embedding this one),
+  // follow it so the room and the toggle never disagree with the CSS.
+  new MutationObserver(() => {
+    const next = root.dataset.theme;
+    if ((next === 'dark' || next === 'light') && next !== theme) apply(next, true);
+  }).observe(root, { attributes: true, attributeFilter: ['data-theme'] });
+
   apply(theme, false);
   return () => theme;
 }

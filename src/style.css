@@ -16,6 +16,9 @@
   --track: #ffe6a6;
   --knob: #221a17;
   --bubble: #ffffff;
+  --bubble-ink: #221a17;
+  --sun: #e9851c;
+  --moon: #fff2c4;
   --font-pixel: 'Pixelify Sans', 'Courier New', monospace;
   --font-mono: 'Space Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
   color-scheme: light;
@@ -171,7 +174,7 @@ button {
 }
 
 .theme-toggle__icon--sun .px-fill {
-  fill: #e9851c;
+  fill: var(--sun);
 }
 
 .theme-toggle__icon--moon {
@@ -179,7 +182,7 @@ button {
 }
 
 .theme-toggle__icon--moon .px-fill {
-  fill: #fff2c4;
+  fill: var(--moon);
 }
 
 .theme-toggle__knob {
@@ -459,15 +462,15 @@ main {
   padding: 7px 12px 8px;
   white-space: nowrap;
   background: var(--bubble);
-  color: #221a17;
+  color: var(--bubble-ink);
   font-family: var(--font-pixel);
   font-size: 1.05rem;
   pointer-events: none;
   box-shadow:
-    0 -3px 0 0 #221a17,
-    0 3px 0 0 #221a17,
-    -3px 0 0 0 #221a17,
-    3px 0 0 0 #221a17;
+    0 -3px 0 0 var(--bubble-ink),
+    0 3px 0 0 var(--bubble-ink),
+    -3px 0 0 0 var(--bubble-ink),
+    3px 0 0 0 var(--bubble-ink);
   animation: pop 0.22s steps(3);
 }
 
@@ -485,12 +488,12 @@ main {
   height: 6px;
   background: var(--bubble);
   box-shadow:
-    -3px 0 0 0 #221a17,
-    3px 0 0 0 #221a17,
+    -3px 0 0 0 var(--bubble-ink),
+    3px 0 0 0 var(--bubble-ink),
     0 3px 0 0 var(--bubble),
-    -3px 3px 0 0 #221a17,
-    3px 3px 0 0 #221a17,
-    0 6px 0 0 #221a17;
+    -3px 3px 0 0 var(--bubble-ink),
+    3px 3px 0 0 var(--bubble-ink),
+    0 6px 0 0 var(--bubble-ink);
   transform: translateX(-50%);
 }
 
