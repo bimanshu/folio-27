@@ -1,10 +1,18 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+
+// The room is "clay": soft matte materials, every block's edges rounded.
+const CLAY = new THREE.Color('#fff3e6');
 
 // Every mesh gets its own material so hover highlights never bleed
 // into other objects that happen to share a colour.
-export function mat(color, opts = {}) {
-  return new THREE.MeshLambertMaterial({ color, ...opts });
+// `exact: true` skips the clay softening, for colours that must read as-is.
+export function mat(color, { exact = false, ...opts } = {}) {
+  const c = new THREE.Color(color);
+  // a touch lighter and softer, like painted modelling clay
+  if (!opts.map && !exact) c.lerp(CLAY, 0.14);
+  return new THREE.MeshStandardMaterial({ roughness: 0.92, metalness: 0, ...opts, color: c });
 }
 
 function toMaterial(m) {
@@ -20,34 +28,37 @@ export function mesh(geometry, material, x = 0, y = 0, z = 0) {
   return m;
 }
 
-export function box(w, h, d, material, x = 0, y = 0, z = 0) {
-  return mesh(new THREE.BoxGeometry(w, h, d), material, x, y, z);
+const rounded = new Map();
+export function roundedBox(w, h, d) {
+  const r = Math.min(0.05, Math.min(w, h, d) * 0.42);
+  if (r < 0.0025) return new THREE.BoxGeometry(w, h, d);
+  const key = `${w}|${h}|${d}`;
+  if (!rounded.has(key)) rounded.set(key, new RoundedBoxGeometry(w, h, d, Math.min(w, h, d) > 0.08 ? 3 : 2, r));
+  return rounded.get(key);
 }
 
-export function cyl(rTop, rBottom, h, material, segments = 10, x = 0, y = 0, z = 0) {
+export function box(w, h, d, material, x = 0, y = 0, z = 0) {
+  return mesh(roundedBox(w, h, d), material, x, y, z);
+}
+
+export function cyl(rTop, rBottom, h, material, segments = 16, x = 0, y = 0, z = 0) {
   return mesh(new THREE.CylinderGeometry(rTop, rBottom, h, segments), material, x, y, z);
 }
 
-// How canvas textures are drawn: `scale` > 1 redraws them at a higher
-// resolution for renderers that don't pixelate the scene.
-export const TEXTURES = { scale: 1 };
+// Canvas textures are drawn in small "design" pixels, then rendered at 4x
+// so text and edges stay crisp up close.
+const TEXTURE_SCALE = 4;
 
-// Pixel-art canvas texture: drawn once at a tiny resolution and sampled
-// with nearest filtering so it stays crisp next to the pixel pass.
 export function canvasTexture(width, height, draw, { repeat } = {}) {
-  const scale = TEXTURES.scale;
   const canvas = document.createElement('canvas');
-  canvas.width = width * scale;
-  canvas.height = height * scale;
+  canvas.width = width * TEXTURE_SCALE;
+  canvas.height = height * TEXTURE_SCALE;
   const ctx = canvas.getContext('2d');
-  ctx.imageSmoothingEnabled = false;
-  ctx.scale(scale, scale);
+  ctx.scale(TEXTURE_SCALE, TEXTURE_SCALE);
   draw(ctx, width, height);
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.magFilter = THREE.NearestFilter;
-  tex.minFilter = THREE.NearestFilter;
-  tex.generateMipmaps = false;
+  tex.anisotropy = 8;
   if (repeat) {
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
     tex.repeat.set(repeat[0], repeat[1]);
@@ -102,7 +113,7 @@ export class Batch {
   build(opts = {}) {
     const merged = mergeGeometries(this.geometries, false);
     this.geometries.forEach((g) => g.dispose());
-    const m = new THREE.Mesh(merged, new THREE.MeshLambertMaterial({ vertexColors: true, ...opts }));
+    const m = new THREE.Mesh(merged, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0, ...opts }));
     m.castShadow = true;
     m.receiveShadow = true;
     return m;

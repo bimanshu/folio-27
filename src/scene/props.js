@@ -2,8 +2,9 @@ import * as THREE from 'three';
 import { box, cyl, hotspot, mat } from './helpers.js';
 import { bookCoverTexture, glowTexture, keyboardTexture } from './textures.js';
 import { GLOW_LAYER } from './room.js';
+import { DESK } from './layout.js';
 
-export const DESK = { x: 0.15, z: -1.325, w: 2.4, d: 0.75, top: 0.76 };
+export { DESK };
 
 // White trestle desk, like the one in the photo.
 export function desk() {
@@ -37,7 +38,7 @@ class Screen {
     this.ctx = this.canvas.getContext('2d');
     this.texture = new THREE.CanvasTexture(this.canvas);
     this.texture.colorSpace = THREE.SRGBColorSpace;
-    this.texture.magFilter = this.texture.minFilter = THREE.NearestFilter;
+    this.texture.minFilter = THREE.LinearFilter;
     this.texture.generateMipmaps = false;
     this.modes = ['code', 'design', 'music'];
     this.mode = 0;
@@ -301,7 +302,7 @@ export function lamp() {
   const g = new THREE.Group();
   g.add(cyl(0.065, 0.075, 0.016, '#f1e4cf', 12, 0, 0.008, 0));
   g.add(cyl(0.018, 0.024, 0.17, '#f1e4cf', 10, 0, 0.1, 0));
-  const shadeMat = new THREE.MeshLambertMaterial({ color: '#f6d7a8', emissive: '#ffb45e', emissiveIntensity: 0 });
+  const shadeMat = new THREE.MeshStandardMaterial({ color: '#f6d7a8', emissive: '#ffb45e', emissiveIntensity: 0, roughness: 0.6 });
   const shade = new THREE.Mesh(new THREE.SphereGeometry(0.11, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), shadeMat);
   shade.position.y = 0.17;
   shade.castShadow = true;

@@ -161,75 +161,6 @@ export function posterTexture(name) {
 }
 
 // ---------------------------------------------------------------------------
-// Gingham prints on the side wall
-// ---------------------------------------------------------------------------
-function gingham(ctx, w, h, base, stripe, cell = 4) {
-  ctx.fillStyle = base;
-  ctx.fillRect(0, 0, w, h);
-  ctx.fillStyle = stripe;
-  ctx.globalAlpha = 0.55;
-  for (let x = 0; x < w; x += cell * 2) ctx.fillRect(x, 0, cell, h);
-  for (let y = 0; y < h; y += cell * 2) ctx.fillRect(0, y, w, cell);
-  ctx.globalAlpha = 1;
-}
-
-export function ginghamTexture(kind) {
-  return canvasTexture(48, 56, (ctx, w, h) => {
-    if (kind === 'cherry') {
-      gingham(ctx, w, h, '#fbe9ea', '#e27d8c');
-      ctx.fillStyle = '#fff8f2';
-      ctx.beginPath();
-      ctx.arc(24, 28, 14, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = '#3d6b2f';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(19, 30);
-      ctx.quadraticCurveTo(22, 18, 27, 16);
-      ctx.moveTo(29, 31);
-      ctx.quadraticCurveTo(28, 22, 27, 16);
-      ctx.stroke();
-      ctx.fillStyle = '#4f8a3a';
-      ctx.fillRect(27, 14, 7, 4);
-      ctx.fillStyle = '#c8202e';
-      ctx.beginPath();
-      ctx.arc(18, 33, 5, 0, Math.PI * 2);
-      ctx.arc(30, 34, 5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#ff8b8b';
-      ctx.fillRect(16, 31, 2, 2);
-      ctx.fillRect(28, 32, 2, 2);
-    } else if (kind === 'pink') {
-      gingham(ctx, w, h, '#fbe3e6', '#ec8fa0', 3);
-    } else if (kind === 'flower') {
-      gingham(ctx, w, h, '#fbf0cf', '#e9c45a', 3);
-      ctx.fillStyle = '#fffbf0';
-      ctx.fillRect(8, 9, 32, 38);
-      ctx.strokeStyle = '#6e8f4a';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(24, 44);
-      ctx.lineTo(24, 22);
-      ctx.moveTo(24, 36);
-      ctx.lineTo(16, 26);
-      ctx.moveTo(24, 34);
-      ctx.lineTo(32, 24);
-      ctx.stroke();
-      ctx.fillStyle = '#f2c230';
-      [[24, 19], [15, 24], [33, 22]].forEach(([x, y]) => {
-        ctx.beginPath();
-        ctx.arc(x, y, 4, 0, Math.PI * 2);
-        ctx.fill();
-      });
-      ctx.fillStyle = '#d48a17';
-      ctx.fillRect(23, 18, 2, 2);
-    } else {
-      gingham(ctx, w, h, '#f8ecc8', '#dcb45a', 4);
-    }
-  });
-}
-
-// ---------------------------------------------------------------------------
 // Room surfaces
 // ---------------------------------------------------------------------------
 export function floorTexture() {
@@ -249,7 +180,7 @@ export function floorTexture() {
       ctx.fillStyle = '#a98460';
       ctx.fillRect(0, row * 8 + 7, 64, 1);
     }
-  }, { repeat: [3, 1.6] });
+  }, { repeat: [3.8, 2.1] });
 }
 
 export function rugTexture() {

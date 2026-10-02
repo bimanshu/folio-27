@@ -14,33 +14,44 @@ export const AVATAR = {
   sole: '#ece0c4',
 };
 
-const ease = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
-const clamp01 = (t) => Math.min(1, Math.max(0, t));
+const H = Math.PI / 2;
 const damp = (current, target, rate, dt) => current + (target - current) * (1 - Math.exp(-rate * dt));
 const wrapAngle = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 
-const POSES = {
-  typing: { shoulderX: -0.78, shoulderZ: 0.06, elbowX: -0.95, elbowZ: 0, lean: 0.1, headX: 0.12, headY: 0 },
-  rest: { shoulderX: -0.32, shoulderZ: 0.08, elbowX: -0.95, elbowZ: 0, lean: 0, headX: 0, headY: 0 },
-};
+// Joint values that make up a pose. Arms: "r" is the working hand.
+const JOINTS = [
+  'rootY', 'pitch', 'lean', 'twist', 'headX', 'headY', 'headZ',
+  'rThigh', 'rKnee', 'lThigh', 'lKnee', 'spread',
+  'rShX', 'rShZ', 'rElX', 'rElZ', 'lShX', 'lShZ', 'lElX', 'lElZ',
+  'eyes', 'mouth',
+];
+
+export const STAND_HEIGHT = 0.875; // hip height when standing on the floor
 
 export class Avatar {
-  constructor(chair) {
-    this.chair = chair;
-    this.root = new THREE.Group();
-    this.root.position.set(0, chair.seatTop, -0.02);
-    chair.swivel.add(this.root);
-
-    this.homeZ = chair.group.position.z;
-    this.homeYaw = chair.swivel.rotation.y;
-    this.seq = null;
+  constructor() {
+    this.group = new THREE.Group(); // floor position + facing
+    this.root = new THREE.Group(); // posture: hip height, lying back
+    this.group.add(this.root);
+    this.yaw = 0;
+    this.yawTarget = 0;
+    this.base = 'sit'; // stand | sit | lie
+    this.seatY = 0.486;
+    this.lieY = 0.65;
+    this.activity = 'type';
+    this.walkBlend = 0;
+    this.walkPhase = 0;
+    this.moving = false;
     this.time = 0;
-    this.glanceTimer = 4;
-    this.glance = 0;
-    this.bubble = null; // text shown above the head while set
-    this.joints = { ...POSES.typing, waveZ: 0, wave: 0 };
+    this.blink = 0;
+    this.nextBlink = 2;
+    this.bubble = null;
+    this.bubbleTime = 0;
+    this.items = {};
+    this.J = Object.fromEntries(JOINTS.map((k) => [k, 0]));
     this.build();
-    hotspot(this.root, 'me');
+    Object.assign(this.J, this._targets());
+    hotspot(this.group, 'me');
   }
 
   build() {
@@ -56,11 +67,10 @@ export class Avatar {
     hips.add(box(0.345, 0.025, 0.255, '#2e2a26', 0, 0.12, 0)); // belt line
 
     // legs — wide, baggy denim stacking over the shoes
-    const shoeTop = mat(A.shoe);
     const shoeMats = [
       mat('#ffffff', { map: shoeSideTexture(false) }),
       mat('#ffffff', { map: shoeSideTexture(true) }),
-      shoeTop,
+      mat(A.shoe),
       mat(A.sole),
       mat(A.shoe),
       mat(A.shoe),
@@ -81,7 +91,7 @@ export class Avatar {
       knee.add(foot);
       thigh.add(knee);
       hips.add(thigh);
-      return { thigh, knee };
+      return { thigh, knee, foot, side: s };
     });
 
     // torso
@@ -104,9 +114,12 @@ export class Avatar {
     head.scale.setScalar(1.12);
     head.add(box(0.3, 0.29, 0.28, skin, 0, 0.155, 0.01));
     const fz = 0.152;
+    this.eyes = [];
     for (const s of [-1, 1]) {
-      head.add(box(0.042, 0.055, 0.012, '#1b1512', s * 0.068, 0.15, fz));
-      head.add(box(0.014, 0.014, 0.006, '#ffffff', s * 0.068 - 0.01, 0.165, fz + 0.006));
+      const eye = box(0.042, 0.055, 0.012, '#1b1512', s * 0.068, 0.15, fz);
+      const shine = box(0.014, 0.014, 0.006, '#ffffff', s * 0.068 - 0.01, 0.165, fz + 0.006);
+      head.add(eye, shine);
+      this.eyes.push({ eye, shine });
       head.add(box(0.07, 0.018, 0.012, A.hair, s * 0.07, 0.205, fz));
       head.add(box(0.04, 0.018, 0.008, '#e08a7e', s * 0.105, 0.098, fz - 0.001));
       head.add(box(0.03, 0.07, 0.06, skin, s * 0.158, 0.14, 0));
@@ -140,121 +153,230 @@ export class Avatar {
       elbow.position.set(0, -0.215, 0);
       elbow.add(box(0.072, 0.2, 0.072, skin, 0, -0.1, 0));
       elbow.add(box(0.08, 0.075, 0.085, skin, 0, -0.235, 0.005));
+      const hand = new THREE.Object3D();
+      hand.position.set(0, -0.255, 0.01);
+      elbow.add(hand);
       shoulder.add(elbow);
       torso.add(shoulder);
-      return { shoulder, elbow, side: s };
+      return { shoulder, elbow, hand, side: s };
     });
+    this.hand = this.arms[0].hand;
   }
 
-  // Swivel round to face the camera and wave.
-  wave(cameraPosition) {
-    if (this.seq) return;
-    this.seq = { kind: 'wave', t: 0, face: this._faceAngle(cameraPosition) };
+  // --- things in hand -------------------------------------------------------
+  // `where`: 'hand' (hangs from the working hand) or 'torso' (held in front)
+  hold(name, object, where, position = [0, 0, 0], rotation = [0, 0, 0]) {
+    this.drop(name);
+    const parent = where === 'hand' ? this.hand : this.torso;
+    object.position.set(...position);
+    object.rotation.set(...rotation);
+    parent.add(object);
+    this.items[name] = object;
   }
 
-  // A full spin on the chair.
-  spin() {
-    if (this.seq) return;
-    this.seq = { kind: 'spin', t: 0 };
+  drop(name) {
+    const o = this.items[name];
+    if (o) o.parent?.remove(o);
+    delete this.items[name];
+    return o;
   }
 
-  get busy() {
-    return !!this.seq;
-  }
-
-  _faceAngle(cam) {
-    const p = new THREE.Vector3();
-    this.chair.group.getWorldPosition(p);
-    return Math.atan2(cam.x - p.x, cam.z - p.z);
+  say(text, seconds = 2.5) {
+    this.bubble = text;
+    this.bubbleTime = seconds;
   }
 
   headWorldPosition(target) {
-    return this.head.localToWorld(target.set(0, 0.42, 0));
+    return this.head.localToWorld(target.set(0, 0.45, 0));
   }
 
-  update(dt, cameraPosition) {
+  handWorldPosition(target) {
+    return this.hand.getWorldPosition(target);
+  }
+
+  get position() {
+    return this.group.position;
+  }
+
+  // --- posture ----------------------------------------------------------------
+  _targets() {
+    const T = {
+      rootY: STAND_HEIGHT, pitch: 0, lean: 0, twist: 0, headX: 0, headY: 0, headZ: 0,
+      rThigh: H, rKnee: -H, lThigh: H, lKnee: -H, spread: 0,
+      rShX: 0.04, rShZ: 0.08, rElX: -0.14, rElZ: 0, lShX: 0.04, lShZ: 0.08, lElX: -0.14, lElZ: 0,
+      eyes: 1, mouth: 0,
+    };
+    const arms = (r, l = r) => {
+      [T.rShX, T.rShZ, T.rElX] = r;
+      [T.lShX, T.lShZ, T.lElX] = l;
+    };
+    if (this.base === 'sit') {
+      Object.assign(T, { rootY: this.seatY, rThigh: 0, rKnee: 0, lThigh: 0, lKnee: 0, spread: 0.06 });
+      arms([-0.32, 0.08, -0.95]);
+    } else if (this.base === 'lie') {
+      Object.assign(T, { rootY: this.lieY, pitch: -H });
+      arms([0.12, 0.14, -0.1]);
+    }
+    const lying = this.base === 'lie';
+    switch (this.activity) {
+      case 'type':
+        arms([-0.78, 0.06, -0.95]);
+        Object.assign(T, { lean: 0.1, headX: 0.12 });
+        break;
+      case 'read':
+        arms([lying ? -1.25 : -0.92, -0.2, lying ? -0.75 : -1.1]);
+        T.headX = lying ? 0.1 : 0.34;
+        break;
+      case 'phone':
+        arms([lying ? -1.15 : -0.85, -0.28, lying ? -0.95 : -1.45], [lying ? 0.1 : -0.32, 0.12, lying ? -0.2 : -0.95]);
+        T.headX = lying ? 0.12 : 0.36;
+        break;
+      case 'carry':
+        T.rShX = 0.06;
+        T.rShZ = 0.14;
+        T.rElX = -0.05;
+        break;
+      case 'pour':
+        arms([-0.95, 0.12, -0.18], [0.04, 0.1, -0.2]);
+        Object.assign(T, { lean: 0.14, headX: 0.38 });
+        break;
+      case 'wipe':
+        arms([-0.95, 0.12, -0.5], [-0.72, 0.05, -0.62]);
+        Object.assign(T, { lean: 0.42, headX: 0.4 });
+        break;
+      case 'vacuum':
+        arms([-0.62, -0.06, -0.38], [0.02, 0.1, -0.15]);
+        Object.assign(T, { lean: 0.1, headX: 0.38 });
+        break;
+      case 'wave':
+        T.rShX = -0.15;
+        T.rShZ = 2.55;
+        T.rElX = -0.2;
+        Object.assign(T, { headZ: 0.12, mouth: 1 });
+        break;
+      case 'stretch':
+        arms([-0.15, 2.7, -0.2]);
+        Object.assign(T, { headX: -0.35, mouth: 1, eyes: 0.2 });
+        break;
+      case 'groggy':
+        Object.assign(T, { headX: 0.42, eyes: 0.3 });
+        break;
+      case 'sleep':
+        Object.assign(T, { eyes: 0, headY: 0.4, headZ: 0.1 });
+        break;
+      case 'look':
+        T.headY = Math.sin(this.time * 0.8) * 0.6;
+        break;
+      default:
+    }
+    return T;
+  }
+
+  // --- frame ------------------------------------------------------------------
+  update(dt) {
     this.time += dt;
     const t = this.time;
-    const J = this.joints;
-    let pose = POSES.typing;
-    let yaw = this.homeYaw;
-    let rollBack = 0;
-    let waving = 0;
-    this.bubble = null;
-
-    if (this.seq) {
-      const s = this.seq;
-      s.t += dt;
-      if (s.kind === 'wave') {
-        // stop a little short of facing the camera: a 3/4 view reads better
-        // for a seated pose, and the head turns the rest of the way
-        const full = wrapAngle(s.face - this.homeYaw);
-        const delta = full - Math.sign(full) * 0.55;
-        const out = ease(clamp01((s.t - 0.35) / 0.8));
-        const back = ease(clamp01((s.t - 3.7) / 0.8));
-        yaw = this.homeYaw + delta * (out - back);
-        rollBack = ease(clamp01(s.t / 0.4)) - ease(clamp01((s.t - 4.45) / 0.4));
-        pose = s.t < 4.5 ? POSES.rest : POSES.typing;
-        waving = s.t > 1.05 && s.t < 3.7 ? 1 : 0;
-        if (s.t > 1.15 && s.t < 3.75) this.bubble = 'hey, there! 👋';
-        if (s.t > 4.9) this.seq = null;
-      } else {
-        const turn = ease(clamp01((s.t - 0.35) / 1.5));
-        yaw = this.homeYaw + turn * Math.PI * 2;
-        rollBack = ease(clamp01(s.t / 0.35)) - ease(clamp01((s.t - 1.9) / 0.4));
-        pose = s.t < 2 ? POSES.rest : POSES.typing;
-        if (s.t > 0.45 && s.t < 2.1) this.bubble = 'wheee!';
-        if (s.t > 2.4) this.seq = null;
-        if (!this.seq) yaw = this.homeYaw;
-      }
+    const J = this.J;
+    const T = this._targets();
+    for (const k of JOINTS) {
+      const rate = k === 'pitch' || k === 'rootY' ? 5 : k === 'eyes' ? 6 : 8;
+      J[k] = damp(J[k], T[k], rate, dt);
     }
 
-    this.chair.swivel.rotation.y = yaw;
-    this.chair.group.position.z = this.homeZ + rollBack * 0.24;
+    // turning
+    this.yaw += wrapAngle(this.yawTarget - this.yaw) * (1 - Math.exp(-dt * 9));
+    this.group.rotation.y = this.yaw;
 
-    // the occasional glance at whoever is looking at the screen
-    const typing = !this.seq;
-    this.glanceTimer -= dt;
-    if (typing && this.glanceTimer < 0) {
-      this.glance = this.glance ? 0 : 1;
-      this.glanceTimer = this.glance ? 1.4 : 6 + Math.random() * 5;
-    }
-    if (!typing) this.glance = this.seq?.kind === 'wave' ? 1 : 0;
-    let glanceYaw = 0;
-    if (this.glance && cameraPosition) {
-      glanceYaw = THREE.MathUtils.clamp(wrapAngle(this._faceAngle(cameraPosition) - yaw), -0.95, 0.95);
-    }
+    // walk cycle, driven by how far the director moved us this frame
+    this.walkBlend = damp(this.walkBlend, this.moving ? 1 : 0, 10, dt);
+    const w = this.walkBlend;
+    const s = Math.sin(this.walkPhase);
+    const c = Math.cos(this.walkPhase);
 
-    const rate = 9;
-    for (const k of ['shoulderX', 'shoulderZ', 'elbowX', 'elbowZ', 'lean', 'headX']) {
-      J[k] = damp(J[k], pose[k], rate, dt);
-    }
-    J.headY = damp(J.headY, glanceYaw, 6, dt);
-    J.wave = damp(J.wave, waving, 8, dt);
+    this.root.position.y = J.rootY + w * (Math.abs(c) * 0.022 - 0.011);
+    this.root.rotation.x = J.pitch;
 
-    this.torso.rotation.x = J.lean + Math.sin(t * 2.1) * 0.012;
-    this.torso.scale.y = 1 + Math.sin(t * 2.1) * 0.012;
-    this.head.rotation.x = J.headX * (1 - this.glance * 0.8) + Math.sin(t * 1.3) * 0.02;
+    const breath = Math.sin(t * (this.activity === 'sleep' ? 1.3 : 2.1)) * (this.activity === 'sleep' ? 0.025 : 0.012);
+    this.torso.rotation.x = J.lean + breath * 0.5;
+    this.torso.rotation.y = J.twist + w * s * 0.07;
+    this.torso.scale.y = 1 + breath;
+
+    this.head.rotation.x = J.headX + Math.sin(t * 1.3) * 0.02;
     this.head.rotation.y = J.headY + Math.sin(t * 0.7) * 0.04;
-    this.head.rotation.z = J.wave * 0.12;
+    this.head.rotation.z = J.headZ;
 
-    for (const arm of this.arms) {
-      const { shoulder, elbow, side } = arm;
-      const typingJitter = typing ? Math.sin(t * 19 + side * 1.9) * 0.07 : 0;
-      shoulder.rotation.x = J.shoulderX;
-      shoulder.rotation.z = J.shoulderZ * side;
-      elbow.rotation.x = J.elbowX + typingJitter;
-      elbow.rotation.z = 0;
-      if (side === -1 && J.wave > 0.001) {
-        // right arm (character's right is -x): raise and wave from the elbow
-        shoulder.rotation.x = THREE.MathUtils.lerp(J.shoulderX, -0.15, J.wave);
-        shoulder.rotation.z = THREE.MathUtils.lerp(-J.shoulderZ, -2.55, J.wave);
-        elbow.rotation.x = THREE.MathUtils.lerp(J.elbowX, -0.2, J.wave);
-        elbow.rotation.z = Math.sin(t * 11) * 0.45 * J.wave;
-      }
+    const legs = [
+      [J.rThigh, J.rKnee, 1],
+      [J.lThigh, J.lKnee, -1],
+    ];
+    this.legs.forEach(({ thigh, knee, side }, i) => {
+      const [th, kn, phase] = legs[i];
+      const swing = s * phase;
+      thigh.rotation.x = th - w * swing * 0.5;
+      thigh.rotation.y = side * J.spread;
+      knee.rotation.x = kn + w * Math.max(0, phase * c) * 0.75;
+    });
+
+    const busyR = ['type', 'read', 'phone', 'pour', 'wipe', 'vacuum', 'wave', 'stretch', 'carry'].includes(this.activity);
+    const busyL = ['type', 'read', 'phone', 'wipe', 'stretch'].includes(this.activity);
+    const [r, l] = this.arms;
+    r.shoulder.rotation.x = J.rShX + (busyR ? 0 : w * s * 0.4);
+    r.shoulder.rotation.z = J.rShZ * r.side;
+    r.elbow.rotation.x = J.rElX;
+    r.elbow.rotation.z = J.rElZ;
+    l.shoulder.rotation.x = J.lShX - (busyL ? 0 : w * s * 0.4);
+    l.shoulder.rotation.z = J.lShZ * l.side;
+    l.elbow.rotation.x = J.lElX;
+    l.elbow.rotation.z = J.lElZ;
+
+    // per-activity motion on top of the pose
+    switch (this.activity) {
+      case 'type':
+        r.elbow.rotation.x += Math.sin(t * 19) * 0.07;
+        l.elbow.rotation.x += Math.sin(t * 19 + 1.9) * 0.07;
+        break;
+      case 'wipe':
+        r.shoulder.rotation.x += Math.sin(t * 6) * 0.16;
+        r.shoulder.rotation.z += Math.cos(t * 6) * 0.14 * r.side;
+        break;
+      case 'vacuum':
+        r.shoulder.rotation.x += Math.sin(t * 3.2) * 0.32;
+        r.elbow.rotation.x += Math.sin(t * 3.2) * 0.14;
+        break;
+      case 'phone':
+        r.elbow.rotation.z = Math.max(0, Math.sin(t * 2.1)) * 0.06;
+        break;
+      case 'read':
+        if (t % 7 < 0.5) l.elbow.rotation.z = Math.sin((t % 7) * Math.PI * 2) * 0.25; // page turn
+        break;
+      case 'wave':
+        r.elbow.rotation.z = Math.sin(t * 11) * 0.45;
+        break;
+      default:
     }
-    this.mouth.scale.x = 1 + J.wave * 0.5;
-    this.mouth.scale.y = 1 + J.wave * 1.6;
-    return typing;
+
+    // blinking (and closed eyes when sleepy)
+    this.nextBlink -= dt;
+    if (this.nextBlink < 0) {
+      this.blink = 0.14;
+      this.nextBlink = 2.5 + Math.random() * 3;
+    }
+    this.blink = Math.max(0, this.blink - dt);
+    const open = Math.max(0.08, J.eyes * (this.blink > 0 ? 0.1 : 1));
+    for (const { eye, shine } of this.eyes) {
+      eye.scale.y = open;
+      shine.visible = open > 0.5;
+    }
+    this.mouth.scale.set(1 + J.mouth * 0.4, 1 + J.mouth * 1.8, 1);
+
+    if (this.bubbleTime > 0) {
+      this.bubbleTime -= dt;
+      if (this.bubbleTime <= 0) this.bubble = null;
+    }
+  }
+
+  // called by whoever moves the avatar, so the legs keep pace with the floor
+  stride(distance) {
+    this.walkPhase += distance * 8.2;
   }
 }

@@ -63,7 +63,7 @@ async function start() {
       return;
     }
     tipLabel.textContent = info.label;
-    tipText.textContent = info.text;
+    tipText.textContent = (world?.life.inBedAtNight && info.asleep) || info.text;
     tip.hidden = false;
     const sr = stage.getBoundingClientRect();
     const w = tip.offsetWidth;
@@ -156,11 +156,22 @@ async function start() {
     visible = entry.isIntersecting;
   }).observe(stage);
 
+  // HUD: the in-room clock and what I'm up to
+  const clockEl = stage.querySelector('.hud__clock');
+  const doingEl = stage.querySelector('.hud__doing');
+  const updateHud = () => {
+    const clock = world.clock;
+    if (clockEl.textContent !== clock) clockEl.textContent = clock;
+    const doing = world.doing;
+    if (doingEl.textContent !== doing) doingEl.textContent = doing;
+  };
+
   let first = true;
   world.renderer.setAnimationLoop(() => {
     if (!visible) return;
     world.update();
     placeBubble();
+    updateHud();
     if (first) {
       first = false;
       stage.classList.add('is-ready');

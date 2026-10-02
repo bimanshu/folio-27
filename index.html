@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Bimanshu's Room</title>
-    <meta name="description" content="Hey, there. A small fun brief of myself, told through a pixel-art 3D version of my room." />
+    <meta name="description" content="Hey, there. A small fun brief of myself, told through a 3D version of my room that runs from day to night." />
     <meta name="color-scheme" content="light dark" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <script>
@@ -52,9 +52,12 @@
         <p class="hero__sub">a small fun brief of myself<span class="hero__cursor" aria-hidden="true"></span></p>
 
         <div class="stage" id="stage">
-          <canvas class="stage__canvas" id="scene" aria-label="A pixel-art 3D model of my room: me at the desk, the poster wall, plants and fairy lights."></canvas>
+          <canvas class="stage__canvas" id="scene" aria-label="A 3D model of my room: me at the desk, the poster wall, plants, a sofa, a bed and a window that follows the time of day."></canvas>
 
-          <div class="hud hud--tl" aria-hidden="true"><span class="hud__chip">LVL 01</span> my room</div>
+          <div class="hud hud--tl">
+            <span class="hud__chip">LVL 01</span>
+            <span class="hud__status"><span class="hud__clock">2:00 pm</span> <span aria-hidden="true">·</span> <span class="hud__doing">working</span></span>
+          </div>
           <p class="hud hud--bl">drag to look around · click things</p>
           <div class="hud hud--br">
             <button class="pixel-btn" type="button" data-action="wave">say hi</button>

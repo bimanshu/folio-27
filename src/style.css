@@ -365,6 +365,15 @@ main {
   gap: 10px;
 }
 
+.hud__status {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.hud__clock {
+  color: var(--ink);
+}
+
 .hud__chip {
   padding: 2px 8px;
   background: var(--accent);

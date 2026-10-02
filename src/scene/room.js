@@ -1,56 +1,158 @@
 import * as THREE from 'three';
-import { box, hotspot, mat, rng } from './helpers.js';
-import { floorTexture, ginghamTexture, glowTexture, posterTexture, rugTexture } from './textures.js';
+import { box, cyl, hotspot, mat, rng } from './helpers.js';
+import { floorTexture, glowTexture, posterTexture, rugTexture } from './textures.js';
+import { ROOM, WINDOW } from './layout.js';
 
-// Room footprint (metres). The diorama is cut away on the front and left so
-// the camera looks into the back-right corner, like the photo of the desk.
-export const ROOM = {
-  minX: -2.3,
-  maxX: 2.3,
-  minZ: -1.7,
-  maxZ: 0.75,
-  wallH: 2.7,
-  wallT: 0.12,
-};
+export { ROOM, WINDOW };
 
-export const GLOW_LAYER = 1; // excluded from the normal/edge pass
+export const GLOW_LAYER = 1; // drawn, but never picked by the raycaster
 
 export function buildRoom() {
   const room = new THREE.Group();
   const { minX, maxX, minZ, maxZ, wallH, wallT } = ROOM;
   const width = maxX - minX;
   const depth = maxZ - minZ;
+  const cx = (minX + maxX) / 2;
+  const cz = (minZ + maxZ) / 2;
 
   // plinth + wooden floor
-  const plinth = box(width + wallT, 0.22, depth + wallT, '#d9ccb9', (minX + maxX + wallT) / 2, -0.12, (minZ + maxZ - wallT) / 2);
+  const plinth = box(width + wallT, 0.22, depth + wallT, '#d9ccb9', cx + wallT / 2, -0.12, cz - wallT / 2);
   plinth.castShadow = false;
   room.add(plinth);
-  const floorMat = mat('#ffffff', { map: floorTexture() });
-  const floor = box(width, 0.02, depth, floorMat, (minX + maxX) / 2, -0.01, (minZ + maxZ) / 2);
+  const floor = box(width, 0.02, depth, mat('#ffffff', { map: floorTexture() }), cx, -0.01, cz);
   floor.castShadow = false;
   room.add(floor);
 
-  // walls with a darker cap so the cut-away reads as a diorama
+  // back wall (desk side)
   const wallColor = '#f1ebe2';
-  const back = box(width + wallT, wallH, wallT, wallColor, (minX + maxX + wallT) / 2, wallH / 2, minZ - wallT / 2);
-  const side = box(wallT, wallH, depth, '#ebe4d9', maxX + wallT / 2, wallH / 2, (minZ + maxZ) / 2);
-  back.castShadow = side.castShadow = false;
-  room.add(back, side);
-  room.add(box(width + wallT, 0.03, wallT, '#cfc3b2', (minX + maxX + wallT) / 2, wallH + 0.015, minZ - wallT / 2));
-  room.add(box(wallT, 0.03, depth, '#cfc3b2', maxX + wallT / 2, wallH + 0.015, (minZ + maxZ) / 2));
-  // skirting boards
-  room.add(box(width, 0.08, 0.02, '#fbf8f3', (minX + maxX) / 2, 0.04, minZ + 0.01));
-  room.add(box(0.02, 0.08, depth, '#fbf8f3', maxX - 0.01, 0.04, (minZ + maxZ) / 2));
+  room.add(box(width + wallT, wallH, wallT, wallColor, cx + wallT / 2, wallH / 2, minZ - wallT / 2));
+  room.add(box(width + wallT, 0.03, wallT, '#cfc3b2', cx + wallT / 2, wallH + 0.015, minZ - wallT / 2));
+  room.add(box(width, 0.08, 0.02, '#fbf8f3', cx, 0.04, minZ + 0.01));
 
-  // rug under the chair
+  const windowWall = buildWindowWall();
+  room.userData.curtains = windowWall.userData.curtains;
+  room.add(windowWall);
+  room.add(buildPosterWall());
+
   const rug = box(1.9, 0.012, 1.25, mat('#ffffff', { map: rugTexture() }), 0.12, 0.006, -0.55);
   rug.castShadow = false;
   room.add(rug);
 
-  room.add(buildPosterWall());
-  room.add(buildGinghamFrames());
-
   return room;
+}
+
+// The right-hand wall, built around the window opening.
+function buildWindowWall() {
+  const g = new THREE.Group();
+  const { minZ, maxZ, maxX, wallH, wallT } = ROOM;
+  const { z0, z1, y0, y1 } = WINDOW;
+  const x = maxX + wallT / 2;
+  const side = '#ebe4d9';
+  const piece = (zA, zB, yA, yB) => box(wallT, yB - yA, zB - zA, side, x, (yA + yB) / 2, (zA + zB) / 2);
+  g.add(piece(minZ, maxZ, 0, y0)); // below the window
+  g.add(piece(minZ, maxZ, y1, wallH)); // above
+  g.add(piece(minZ, z0, y0, y1)); // left of it
+  g.add(piece(z1, maxZ, y0, y1)); // right of it
+  g.add(box(wallT, 0.03, maxZ - minZ, '#cfc3b2', x, wallH + 0.015, (minZ + maxZ) / 2));
+  g.add(box(0.02, 0.08, maxZ - minZ, '#fbf8f3', maxX - 0.01, 0.04, (minZ + maxZ) / 2));
+
+  // window frame, sill and a cross mullion that throws a shadow
+  const frame = '#f7f4ef';
+  const w = z1 - z0;
+  const h = y1 - y0;
+  const zc = (z0 + z1) / 2;
+  const yc = (y0 + y1) / 2;
+  const win = new THREE.Group();
+  win.add(box(wallT + 0.02, 0.05, w + 0.1, frame, x, y1 + 0.005, zc));
+  win.add(box(wallT + 0.2, 0.05, w + 0.16, frame, x - 0.07, y0 - 0.005, zc)); // sill
+  win.add(box(wallT + 0.02, h, 0.05, frame, x, yc, z0 - 0.005));
+  win.add(box(wallT + 0.02, h, 0.05, frame, x, yc, z1 + 0.005));
+  win.add(box(0.04, h, 0.035, frame, x, yc, zc));
+  win.add(box(0.04, 0.035, w, frame, x, y0 + h * 0.58, zc));
+  const glass = new THREE.Mesh(
+    new THREE.PlaneGeometry(w, h),
+    new THREE.MeshStandardMaterial({ color: '#dfeeff', transparent: true, opacity: 0.1, roughness: 0.05, depthWrite: false }),
+  );
+  glass.rotation.y = -Math.PI / 2;
+  glass.position.set(x, yc, zc);
+  win.add(glass);
+  g.add(hotspot(win, 'window'));
+
+  // curtain rod + two grey curtains (they draw shut when you click the window)
+  const rodY = y1 + 0.17;
+  const rod = cyl(0.012, 0.012, w + 1.05, '#b9b3aa', 10, maxX - 0.08, rodY, zc);
+  rod.rotation.x = Math.PI / 2;
+  g.add(rod);
+  g.add(cyl(0.025, 0.025, 0.04, '#b9b3aa', 10, maxX - 0.08, rodY, z0 - 0.5).rotateX(Math.PI / 2));
+  g.add(cyl(0.025, 0.025, 0.04, '#b9b3aa', 10, maxX - 0.08, rodY, z1 + 0.5).rotateX(Math.PI / 2));
+  const curtains = [curtain(1), curtain(-1)];
+  curtains[0].position.set(maxX - 0.1, rodY - 0.02, z0 - 0.42);
+  curtains[1].position.set(maxX - 0.1, rodY - 0.02, z1 + 0.42);
+  curtains.forEach((c) => g.add(hotspot(c, 'window')));
+  g.userData.curtains = curtains;
+  return g;
+}
+
+// A curtain hanging from its outer edge; scale.x is how far it's drawn.
+function curtain(dir) {
+  const height = WINDOW.y1 + 0.15;
+  const geo = new THREE.PlaneGeometry(1, height, 40, 1);
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const u = pos.getX(i) + 0.5; // 0..1 across the width
+    pos.setX(i, u);
+    pos.setZ(i, Math.sin(u * Math.PI * 9) * 0.028);
+  }
+  geo.computeVertexNormals();
+  geo.translate(0, -height / 2, 0);
+  const m = new THREE.Mesh(geo, mat('#8b8e94', { side: THREE.DoubleSide, shadowSide: THREE.DoubleSide, roughness: 1 }));
+  m.castShadow = true;
+  m.receiveShadow = true;
+  const g = new THREE.Group();
+  g.add(m);
+  g.rotation.y = dir > 0 ? -Math.PI / 2 : Math.PI / 2; // local +x runs towards the window centre
+  g.scale.x = 0.36;
+  g.userData.open = 0.36;
+  g.userData.closed = (WINDOW.z1 - WINDOW.z0) / 2 + 0.45;
+  return g;
+}
+
+// Invisible walls and a ceiling that only the sun's shadow sees, so daylight
+// can only get in through the window.
+export function sunOccluders(sunShadowCamera) {
+  const { minX, maxX, minZ, maxZ, wallH, wallT } = ROOM;
+  const material = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false });
+  const parts = [
+    [maxX - minX + 1, 0.1, maxZ - minZ + 1, (minX + maxX) / 2, wallH + 0.05, (minZ + maxZ) / 2], // ceiling
+    [maxX - minX + 1, wallH + 0.1, 0.1, (minX + maxX) / 2, wallH / 2, maxZ + 0.05], // front
+    [0.1, wallH + 0.1, maxZ - minZ + 1, minX - 0.05, wallH / 2, (minZ + maxZ) / 2], // left
+    [0.1, 0.4, maxZ - minZ + 1, maxX + wallT + 0.05, wallH + 0.1, (minZ + maxZ) / 2], // over the window wall's top
+  ];
+  return parts.map(([w, h, d, x, y, z]) => {
+    const o = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
+    o.position.set(x, y, z);
+    o.castShadow = true;
+    o.raycast = () => {};
+    // draw into the sun's shadow map only; every other light ignores it
+    o.onBeforeShadow = (renderer, object, camera, shadowCamera, geometry) => {
+      geometry.setDrawRange(0, shadowCamera === sunShadowCamera ? Infinity : 0);
+    };
+    return o;
+  });
+}
+
+// The view out of the window: a painted sky just beyond the glass.
+export function skyPlane(texture) {
+  const { maxX, wallT } = ROOM;
+  const { z0, z1, y0, y1 } = WINDOW;
+  const plane = new THREE.Mesh(
+    new THREE.PlaneGeometry(2.2, 2.0),
+    new THREE.MeshBasicMaterial({ map: texture, toneMapped: false }),
+  );
+  plane.rotation.y = -Math.PI / 2;
+  plane.position.set(maxX + wallT + 0.22, (y0 + y1) / 2 + 0.05, (z0 + z1) / 2);
+  plane.raycast = () => {};
+  return plane;
 }
 
 // The gallery wall above the monitor, arranged in the same diamond as the photo.
@@ -84,52 +186,32 @@ function buildPosterWall() {
   return hotspot(wall, 'posters');
 }
 
-function buildGinghamFrames() {
-  const frames = new THREE.Group();
-  const r = rng(9);
-  const kinds = ['cherry', 'pink', 'flower', 'yellow'];
-  kinds.forEach((kind, i) => {
-    const mats = Array.from({ length: 6 }, (_, f) =>
-      f === 1 ? mat('#ffffff', { map: ginghamTexture(kind) }) : mat('#f7efe4'),
-    );
-    const frame = box(0.008, 0.34, 0.3, mats, ROOM.maxX - 0.005, 2.16 - i * 0.39, -0.62 + (r() - 0.5) * 0.06);
-    frame.rotation.x = (r() - 0.5) * 0.08;
-    frame.castShadow = false;
-    frames.add(frame);
-  });
-  return hotspot(frames, 'frames');
-}
-
 // ---------------------------------------------------------------------------
-// Fairy lights: a pixel wire, little warm bulbs and additive glow sprites.
+// Fairy lights: a thin wire, little warm bulbs and additive glow sprites.
 // ---------------------------------------------------------------------------
 let sharedGlow;
 const WARM = new THREE.Color('#ffc46b');
 
-export function fairyLights(points, { spacing = 0.12, sag = 0, seed = 1 } = {}) {
+export function fairyLights(points, { spacing = 0.12, seed = 1 } = {}) {
   sharedGlow ||= glowTexture();
   const curve = new THREE.CatmullRomCurve3(points.map((p) => new THREE.Vector3(...p)));
-  const length = curve.getLength();
-  const count = Math.max(2, Math.round(length / spacing));
+  const count = Math.max(2, Math.round(curve.getLength() / spacing));
   const r = rng(seed);
 
   const g = new THREE.Group();
-  const wirePoints = curve.getSpacedPoints(Math.max(8, count * 4));
   const wire = new THREE.Line(
-    new THREE.BufferGeometry().setFromPoints(wirePoints),
+    new THREE.BufferGeometry().setFromPoints(curve.getSpacedPoints(Math.max(8, count * 4))),
     new THREE.LineBasicMaterial({ color: '#cfc6b8', transparent: true, opacity: 0.85 }),
   );
   wire.layers.set(GLOW_LAYER);
   g.add(wire);
 
-  const bulbGeo = new THREE.BoxGeometry(0.024, 0.024, 0.024);
+  const bulbGeo = new THREE.SphereGeometry(0.013, 8, 6);
   const bulbs = [];
   for (let i = 0; i < count; i++) {
     const t = (i + 0.5) / count;
     const p = curve.getPointAt(t);
-    p.y -= Math.sin(t * Math.PI) * sag;
-    const bulbMat = new THREE.MeshBasicMaterial({ color: WARM.clone() });
-    const bulb = new THREE.Mesh(bulbGeo, bulbMat);
+    const bulb = new THREE.Mesh(bulbGeo, new THREE.MeshBasicMaterial({ color: WARM.clone() }));
     bulb.position.copy(p);
     const glow = new THREE.Sprite(
       new THREE.SpriteMaterial({
@@ -141,7 +223,7 @@ export function fairyLights(points, { spacing = 0.12, sag = 0, seed = 1 } = {}) 
         opacity: 0.4,
       }),
     );
-    glow.scale.setScalar(0.17);
+    glow.scale.setScalar(0.15);
     glow.position.copy(p);
     glow.layers.set(GLOW_LAYER);
     g.add(bulb, glow);

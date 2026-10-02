@@ -1,13 +1,19 @@
 // Hover labels for everything in the room. Edit freely — `label` is the
 // little tag (taken from the sketch), `text` is the one-liner under it.
 export const HOTSPOTS = {
-  me: { label: 'me, sitting on the chair', text: 'FOG Essentials tee · baggy denim · Blazer Mids. Click to say hi.' },
-  chair: { label: 'chair', text: 'Click to give it a spin.' },
-  monitor: { label: 'monitor', text: 'Where the work happens. Click to switch apps.' },
+  me: { label: 'me', text: 'FOG Essentials tee · baggy denim · Blazer Mids. Click to say hi.', asleep: 'Asleep. Click the desk or the sofa to wake me.' },
+  chair: { label: 'chair', text: 'Click to give it a spin.', asleep: 'Click to wake me up and send me back to work.' },
+  desk: { label: 'desk', text: 'Click to send me back to work.', asleep: 'Click to wake me up and send me back to work.' },
+  sofa: { label: 'sofa', text: 'Click and I’ll come read here.', asleep: 'Click to wake me up and send me back to work.' },
+  bed: { label: 'bed', text: 'Click for a quick scroll in bed.' },
+  window: { label: 'window', text: 'Watch the light move with the time. Click to draw the curtains.' },
+  vacuum: { label: 'vacuum', text: 'Click and I’ll vacuum the floor.' },
+  can: { label: 'watering can', text: 'Click and I’ll water the plants.' },
+  monitor: { label: 'monitor', text: 'Where the work happens. Click to switch apps.', asleep: 'Click to wake me up and send me back to work.' },
   keyboard: { label: 'keyboard', text: 'Clack clack clack.' },
-  books: { label: 'books', text: 'Currently on the desk: The Personal MBA.' },
-  palm: { label: 'palm tree', text: 'The tallest thing in the room.' },
-  snake: { label: 'snake plant', text: 'Basically unkillable.' },
+  books: { label: 'books', text: 'Currently reading: The Personal MBA. Click and I’ll read on the sofa.' },
+  palm: { label: 'palm tree', text: 'The tallest thing in the room. Click to water the plants.' },
+  snake: { label: 'snake plant', text: 'Basically unkillable. Click to water the plants.' },
   lamp: { label: 'lamp', text: 'Click to switch it on or off.' },
   posters: { label: 'the wall', text: 'Take that risk. Make little you proud.' },
   lights: { label: 'fairy lights', text: 'Click for a little light show.' },
@@ -15,7 +21,6 @@ export const HOTSPOTS = {
   poinsettia: { label: 'poinsettia', text: 'The red that ties the room together.' },
   flowers: { label: 'kalanchoe', text: 'Tiny pink flowers, big mood.' },
   succulents: { label: 'succulents', text: 'Low maintenance, high reward.' },
-  frames: { label: 'gingham prints', text: 'Cherries and checks.' },
   headphones: { label: 'headphones', text: 'Focus mode.' },
   candle: { label: 'candle', text: 'Click to light or blow it out.' },
 };
