@@ -4,7 +4,8 @@ import * as THREE from 'three';
 import { HOTSPOTS } from '../content.js';
 import { renderPixelIcons } from '../pixel-icons.js';
 import { initTheme } from '../theme.js';
-import { createVariantWorld } from './VariantWorld.js';
+import { World } from '../scene/world.js';
+import { createVariantWorld, disposeWorld } from './VariantWorld.js';
 import { STYLES } from './styles.js';
 import { createPicker } from './picker.js';
 
@@ -138,17 +139,19 @@ function placeBubble() {
 // --- swap the whole world when the variant changes ----------------------------
 function mount(id) {
   const style = STYLES.find((s) => s.id === id);
+  const pixel = id === 'pixel';
   const old = stage.querySelector('.stage__canvas');
   const canvas = document.createElement('canvas');
   canvas.className = 'stage__canvas';
   canvas.id = 'scene';
   canvas.setAttribute('aria-label', old.getAttribute('aria-label'));
-  if (world) world.dispose();
+  if (world) disposeWorld(world);
   old.replaceWith(canvas);
   tip.hidden = true;
   bubble.hidden = true;
 
-  world = createVariantWorld(canvas, { reducedMotion }, style);
+  // "Pixel" is the production room as it ships today, for comparison
+  world = pixel ? new World(canvas, { reducedMotion }) : createVariantWorld(canvas, { reducedMotion }, style);
   world.setTheme(theme, false);
   bind(canvas);
   resize();
@@ -169,4 +172,4 @@ function mount(id) {
 stage.querySelector('[data-action="wave"]').addEventListener('click', () => world?.wave());
 stage.querySelector('[data-action="reset"]').addEventListener('click', () => world?.resetView());
 
-createPicker(STYLES, mount);
+createPicker([{ id: 'pixel', label: 'Pixel' }, ...STYLES], mount);

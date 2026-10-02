@@ -155,20 +155,25 @@ class VariantWorld extends World {
   }
 
   dispose() {
-    this.renderer.setAnimationLoop(null);
-    this.controls.dispose();
-    this.scene.traverse((o) => {
-      o.geometry?.dispose();
-      const mats = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
-      mats.forEach((m) => {
-        m.map?.dispose();
-        m.dispose();
-      });
-    });
-    this.composer.dispose?.();
-    this.renderer.dispose();
-    this.renderer.forceContextLoss();
+    disposeWorld(this);
   }
+}
+
+// Tears down any world (variant or the production pixel one) before a swap.
+export function disposeWorld(world) {
+  world.renderer.setAnimationLoop(null);
+  world.controls.dispose();
+  world.scene.traverse((o) => {
+    o.geometry?.dispose();
+    const mats = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
+    mats.forEach((m) => {
+      m.map?.dispose();
+      m.dispose();
+    });
+  });
+  world.composer.dispose?.();
+  world.renderer.dispose();
+  world.renderer.forceContextLoss();
 }
 
 function smoothTextures(scene, renderer) {

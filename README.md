@@ -21,6 +21,12 @@ npm run build    # static site in dist/
 npm run preview  # serve the build
 ```
 
+## Compare render styles
+
+`npm run dev`, then open http://localhost:5173/variants.html. It's the same page with a picker at the top that switches between the current **Pixel** room and four smooth alternatives: **Clay**, **Toon**, **Ink** and **Studio**. Use the arrow keys or 1–5 to flip, and `?variant=toon` links straight to one.
+
+To see it on a phone or tablet on the same Wi-Fi, run `npm run dev -- --host` and open the "Network" address it prints.
+
 ## Make it yours
 
 | What | Where |
