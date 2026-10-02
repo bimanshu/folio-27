@@ -12,10 +12,10 @@ const C = (hex) => new THREE.Color(hex);
 const KEYS = [
   {
     // day
-    lightAz: -0.1, lightEl: 33, lightColor: C('#ffefd2'), lightI: 6.5,
+    lightAz: -0.1, lightEl: 33, lightColor: C('#ffeccc'), lightI: 9,
     sunAz: -0.3, sunEl: 34, sunDisc: C('#fffbe8'), sunVisible: 1, moonAz: 0.35, moonEl: -20, moonVisible: 0,
     hemiSky: C('#fff4e6'), hemiGround: C('#b8a48e'), hemiI: 0.8, env: 0.42,
-    fillColor: C('#fff6ea'), fillI: 0.85, interior: 0, exposure: 1,
+    fillColor: C('#fff6ea'), fillI: 0.75, interior: 0, exposure: 1,
     skyTop: C('#5aa9ec'), skyHorizon: C('#cfe8ff'), stars: 0,
     cloud: C('#ffffff'), cloudLit: C('#e6edf6'), cloudAlpha: 0.9, skyline: C('#9fb4c8'), cityLights: 0,
     shaft: 0.05,
