@@ -28,14 +28,20 @@ export function cyl(rTop, rBottom, h, material, segments = 10, x = 0, y = 0, z =
   return mesh(new THREE.CylinderGeometry(rTop, rBottom, h, segments), material, x, y, z);
 }
 
+// How canvas textures are drawn: `scale` > 1 redraws them at a higher
+// resolution for renderers that don't pixelate the scene.
+export const TEXTURES = { scale: 1 };
+
 // Pixel-art canvas texture: drawn once at a tiny resolution and sampled
 // with nearest filtering so it stays crisp next to the pixel pass.
 export function canvasTexture(width, height, draw, { repeat } = {}) {
+  const scale = TEXTURES.scale;
   const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
+  canvas.width = width * scale;
+  canvas.height = height * scale;
   const ctx = canvas.getContext('2d');
   ctx.imageSmoothingEnabled = false;
+  ctx.scale(scale, scale);
   draw(ctx, width, height);
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;

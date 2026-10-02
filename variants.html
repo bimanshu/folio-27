@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <!-- Variant harness: same page as index.html, room drawn by src/variants. Delete after promotion. -->
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Room Variants</title>
+    <meta name="description" content="Hey, there. A small fun brief of myself, told through a pixel-art 3D version of my room." />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <script>
+      // Set the theme before first paint so there's no flash.
+      // A saved choice wins, then a theme the host page already set, then the OS.
+      (function () {
+        var root = document.documentElement;
+        var stored = null;
+        try {
+          stored = localStorage.getItem('folio-theme');
+        } catch (e) {}
+        var preset = root.getAttribute('data-theme');
+        if (preset !== 'dark' && preset !== 'light') preset = null;
+        var dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        root.dataset.theme = stored || preset || (dark ? 'dark' : 'light');
+      })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400..700&family=Space+Mono:wght@400;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="bimanshu, home">bimanshu<span class="caret" aria-hidden="true">_</span></a>
+      <button class="theme-toggle" type="button" aria-pressed="false" aria-label="Switch to dark mode">
+        <span class="theme-toggle__track" aria-hidden="true">
+          <span class="theme-toggle__icon theme-toggle__icon--sun" data-pixel="sun"></span>
+          <span class="theme-toggle__icon theme-toggle__icon--moon" data-pixel="moon"></span>
+          <span class="theme-toggle__knob"></span>
+        </span>
+        <span class="theme-toggle__label">light</span>
+      </button>
+    </header>
+
+    <main>
+      <section class="hero" aria-labelledby="hero-title">
+        <h1 id="hero-title" class="hero__title">
+          <span>HEY, THERE</span>
+          <span class="hero__wave" data-pixel="hand" aria-hidden="true"></span>
+        </h1>
+        <p class="hero__sub">a small fun brief of myself<span class="hero__cursor" aria-hidden="true"></span></p>
+
+        <div class="stage" id="stage">
+          <canvas class="stage__canvas" id="scene" aria-label="A pixel-art 3D model of my room: me at the desk, the poster wall, plants and fairy lights."></canvas>
+
+          <div class="hud hud--tl" aria-hidden="true"><span class="hud__chip">LVL 01</span> my room</div>
+          <p class="hud hud--bl">drag to look around · click things</p>
+          <div class="hud hud--br">
+            <button class="pixel-btn" type="button" data-action="wave">say hi</button>
+            <button class="pixel-btn" type="button" data-action="reset">reset view</button>
+          </div>
+
+          <div class="tip" role="status" aria-live="polite" hidden>
+            <span class="tip__label"></span>
+            <span class="tip__text"></span>
+          </div>
+          <div class="bubble" aria-live="polite" hidden></div>
+          <div class="stage__loading" aria-hidden="true">loading room<span class="dots"></span></div>
+          <p class="stage__fallback" hidden>Your browser couldn't start WebGL, so the 3D room can't load here. Try a recent Chrome, Safari or Firefox.</p>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="/src/variants/main.js"></script>
+  </body>
+</html>

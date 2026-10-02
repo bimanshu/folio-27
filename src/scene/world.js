@@ -61,6 +61,10 @@ export class World {
     this.lastAutoWave = 0;
     this.time = 0;
     this.effects = [];
+    // per-instance so other renderers of the same room can retune them
+    this.themes = THEMES;
+    this.view = { ...VIEW };
+    this.target = TARGET.clone();
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: true, powerPreference: 'high-performance' });
     this.renderer.setClearColor(0x000000, 0);
@@ -250,7 +254,7 @@ export class World {
 
   setupControls() {
     const controls = new OrbitControls(this.camera, this.canvas);
-    controls.target.copy(TARGET);
+    controls.target.copy(this.target);
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
     controls.enablePan = false;
@@ -272,18 +276,18 @@ export class World {
       this.lastInteraction = this.time;
     });
     this.controls = controls;
-    this.setView(VIEW.theta, VIEW.phi);
+    this.setView(this.view.theta, this.view.phi);
   }
 
   setView(theta, phi) {
-    const sph = new THREE.Spherical(VIEW.distance, phi, theta);
-    this.camera.position.setFromSpherical(sph).add(TARGET);
-    this.camera.lookAt(TARGET);
+    const sph = new THREE.Spherical(this.view.distance, phi, theta);
+    this.camera.position.setFromSpherical(sph).add(this.target);
+    this.camera.lookAt(this.target);
     this.controls.update();
   }
 
   resetView() {
-    const sph = new THREE.Spherical().setFromVector3(this.camera.position.clone().sub(TARGET));
+    const sph = new THREE.Spherical().setFromVector3(this.camera.position.clone().sub(this.target));
     this.resetTween = { from: { theta: sph.theta, phi: sph.phi }, t: 0 };
   }
 
@@ -303,9 +307,9 @@ export class World {
 
   // Frame the whole diorama from the default view, whatever the stage shape.
   fitFrustum(aspect) {
-    const probe = new THREE.Object3D();
-    probe.position.setFromSpherical(new THREE.Spherical(VIEW.distance, VIEW.phi, VIEW.theta)).add(TARGET);
-    probe.lookAt(TARGET);
+    const probe = new THREE.Camera(); // a camera, so lookAt points -z at the target
+    probe.position.setFromSpherical(new THREE.Spherical(this.view.distance, this.view.phi, this.view.theta)).add(this.target);
+    probe.lookAt(this.target);
     probe.updateMatrixWorld();
     const inv = probe.matrixWorld.clone().invert();
     const { minX, maxX, minZ, maxZ, wallH, wallT } = ROOM;
@@ -477,8 +481,8 @@ export class World {
     this.mix += (this.mixTarget - this.mix) * (1 - Math.exp(-dt * 3.5));
     this.lampLevel += ((this.lampOn ? 1 : 0) - this.lampLevel) * (1 - Math.exp(-dt * 10));
     const m = this.mix;
-    const L = THEMES.light;
-    const D = THEMES.dark;
+    const L = this.themes.light;
+    const D = this.themes.dark;
     const lerp = (a, b) => a + (b - a) * m;
 
     this.hemi.color.copy(L.sky).lerp(D.sky, m);
@@ -546,13 +550,13 @@ export class World {
       const r = this.resetTween;
       r.t = Math.min(1, r.t + dt / 0.9);
       const e = 1 - Math.pow(1 - r.t, 3);
-      this.setView(r.from.theta + (VIEW.theta - r.from.theta) * e, r.from.phi + (VIEW.phi - r.from.phi) * e);
+      this.setView(r.from.theta + (this.view.theta - r.from.theta) * e, r.from.phi + (this.view.phi - r.from.phi) * e);
       if (r.t >= 1) this.resetTween = null;
     } else if (!this.dragging && !this.reducedMotion && t - this.lastInteraction > 6) {
-      const sph = new THREE.Spherical().setFromVector3(this.camera.position.clone().sub(TARGET));
-      const goal = VIEW.theta + Math.sin(t * 0.22) * 0.08;
+      const sph = new THREE.Spherical().setFromVector3(this.camera.position.clone().sub(this.target));
+      const goal = this.view.theta + Math.sin(t * 0.22) * 0.08;
       const theta = sph.theta + (goal - sph.theta) * (1 - Math.exp(-dt * 0.6));
-      const phi = sph.phi + (VIEW.phi - sph.phi) * (1 - Math.exp(-dt * 0.6));
+      const phi = sph.phi + (this.view.phi - sph.phi) * (1 - Math.exp(-dt * 0.6));
       this.setView(theta, phi);
     } else {
       this.controls.update();
