@@ -28,6 +28,11 @@ const JOINTS = [
 
 export const STAND_HEIGHT = 0.875; // hip height when standing on the floor
 
+// Thigh and knee angles for a leg shape that stays put in the room while the
+// body pitches back: `lift` raises the knee, `drop` swings the shin down
+// (0, 0 is a straight leg along the body; 0, π/2 is sitting on a chair).
+export const legJoints = (lift, drop, pitch) => ({ thigh: -lift - pitch, knee: drop - H + lift });
+
 export class Avatar {
   constructor() {
     this.group = new THREE.Group(); // floor position + facing
@@ -38,6 +43,8 @@ export class Avatar {
     this.base = 'sit'; // stand | sit | lie
     this.seatY = 0.486;
     this.lieY = 0.65;
+    this.lieLegs = [0, 0];
+    this.lieLean = 0;
     this.activity = 'type';
     this.walkBlend = 0;
     this.walkPhase = 0;
@@ -47,7 +54,11 @@ export class Avatar {
     this.nextBlink = 2;
     this.bubble = null;
     this.bubbleTime = 0;
-    this.items = {};
+    this.items = {}; // name -> { object, mode }
+    this.lock = {}; // joints driven directly (staged moves like getting into bed)
+    this.pouring = false;
+    this.pourReach = false;
+    this.pour = 0;
     this.J = Object.fromEntries(JOINTS.map((k) => [k, 0]));
     this.build();
     Object.assign(this.J, this._targets());
@@ -164,21 +175,21 @@ export class Avatar {
   }
 
   // --- things in hand -------------------------------------------------------
-  // `where`: 'hand' (hangs from the working hand) or 'torso' (held in front)
-  hold(name, object, where, position = [0, 0, 0], rotation = [0, 0, 0]) {
+  // Items live in the scene and are placed from the hands every frame, so the
+  // hands are always on them. mode: 'book' (both hands), 'phone' (right
+  // hand, screen to the eyes), 'can' (hangs from the right hand, tips to pour)
+  hold(name, object, mode) {
     this.drop(name);
-    const parent = where === 'hand' ? this.hand : this.torso;
-    object.position.set(...position);
-    object.rotation.set(...rotation);
-    parent.add(object);
-    this.items[name] = object;
+    this.group.parent.add(object);
+    this.items[name] = { object, mode };
+    this._placeItems();
   }
 
   drop(name) {
-    const o = this.items[name];
-    if (o) o.parent?.remove(o);
+    const item = this.items[name];
+    if (item) item.object.parent?.remove(item.object);
     delete this.items[name];
-    return o;
+    return item?.object;
   }
 
   say(text, seconds = 2.5) {
@@ -206,66 +217,80 @@ export class Avatar {
       rShX: 0.04, rShZ: 0.08, rElX: -0.14, rElZ: 0, lShX: 0.04, lShZ: 0.08, lElX: -0.14, lElZ: 0,
       eyes: 1, mouth: 0,
     };
-    const arms = (r, l = r) => {
-      [T.rShX, T.rShZ, T.rElX] = r;
-      [T.lShX, T.lShZ, T.lElX] = l;
-    };
+    // [shoulder x, shoulder z (outwards), elbow x, elbow z (inwards)]
+    const right = ([a, b, c, d = 0]) => Object.assign(T, { rShX: a, rShZ: b, rElX: c, rElZ: d });
+    const left = ([a, b, c, d = 0]) => Object.assign(T, { lShX: a, lShZ: b, lElX: c, lElZ: d });
+    const lying = this.base === 'lie';
     if (this.base === 'sit') {
       Object.assign(T, { rootY: this.seatY, rThigh: 0, rKnee: 0, lThigh: 0, lKnee: 0, spread: 0.06 });
-      arms([-0.32, 0.08, -0.95]);
-    } else if (this.base === 'lie') {
-      Object.assign(T, { rootY: this.lieY, pitch: -H });
-      arms([0.12, 0.14, -0.1]);
+      right([-0.32, 0.08, -0.95]);
+      left([-0.32, 0.08, -0.95]);
+    } else if (lying) {
+      const [lift, drop] = this.lieLegs;
+      const thigh = H - lift;
+      const knee = drop - H + lift;
+      Object.assign(T, { rootY: this.lieY, pitch: -H, lean: this.lieLean, rThigh: thigh, lThigh: thigh, rKnee: knee, lKnee: knee });
+      right([0.12, 0.14, -0.1]);
+      left([0.12, 0.14, -0.1]);
     }
-    const lying = this.base === 'lie';
     switch (this.activity) {
       case 'type':
-        arms([-0.78, 0.06, -0.95]);
+        right([-0.78, 0.06, -0.95]);
+        left([-0.78, 0.06, -0.95]);
         Object.assign(T, { lean: 0.1, headX: 0.12 });
         break;
-      case 'read':
-        arms([lying ? -1.25 : -0.92, -0.2, lying ? -0.75 : -1.1]);
-        T.headX = lying ? 0.1 : 0.34;
+      case 'read': {
+        // elbows down by the ribs (or on the cushion), the book at the chest
+        const pose = lying ? [-0.6, 0.14, -1.75, -0.4] : [-0.64, 0.26, -1.55, -0.7];
+        right(pose);
+        left(pose);
+        T.headX = lying ? 0.32 : 0.42;
         break;
+      }
       case 'phone':
-        arms([lying ? -1.15 : -0.85, -0.28, lying ? -0.95 : -1.45], [lying ? 0.1 : -0.32, 0.12, lying ? -0.2 : -0.95]);
-        T.headX = lying ? 0.12 : 0.36;
+        // elbow on the mattress, phone held up over the chest
+        right(lying ? [-0.48, 0.14, -1.95, -0.6] : [-0.68, 0.14, -1.65, -0.8]);
+        T.headX = lying ? 0.34 : 0.42;
         break;
       case 'carry':
-        T.rShX = 0.06;
-        T.rShZ = 0.14;
-        T.rElX = -0.05;
+        right([0.06, 0.14, -0.05]);
         break;
       case 'pour':
-        arms([-0.95, 0.12, -0.18], [0.04, 0.1, -0.2]);
-        Object.assign(T, { lean: 0.14, headX: 0.38 });
+        // floor pots: can held low in front; desk pots: arm out over the desk
+        if (this.pourReach) {
+          right([-1.52, 0.18, -0.05, -0.5]);
+          Object.assign(T, { lean: 0.38, headX: 0.3 });
+        } else {
+          right([-1.04, 0.1, -0.2, -0.4]);
+          Object.assign(T, { lean: 0.2, headX: 0.42 });
+        }
+        left([0.04, 0.1, -0.2]);
         break;
       case 'wipe':
-        arms([-0.95, 0.12, -0.5], [-0.72, 0.05, -0.62]);
+        right([-0.95, 0.12, -0.5]);
+        left([-0.72, 0.05, -0.62]);
         Object.assign(T, { lean: 0.42, headX: 0.4 });
         break;
       case 'vacuum':
-        arms([-0.62, -0.06, -0.38], [0.02, 0.1, -0.15]);
+        right([-0.62, -0.06, -0.38]);
+        left([0.02, 0.1, -0.15]);
         Object.assign(T, { lean: 0.1, headX: 0.38 });
         break;
       case 'wave':
-        T.rShX = -0.15;
-        T.rShZ = 2.55;
-        T.rElX = -0.2;
+        right([-0.15, 2.55, -0.2]);
         Object.assign(T, { headZ: 0.12, mouth: 1 });
         break;
       case 'stretch':
-        arms([-0.15, 2.7, -0.2]);
+        right([-0.15, 2.7, -0.2]);
+        left([-0.15, 2.7, -0.2]);
         Object.assign(T, { headX: -0.35, mouth: 1, eyes: 0.2 });
         break;
       case 'groggy':
-        Object.assign(T, { headX: 0.42, eyes: 0.3 });
+        if (lying && this.items.phone) right([0.04, 0.14, -2.15, -0.6]); // phone sinks onto the chest
+        Object.assign(T, { headX: lying ? 0.2 : 0.42, eyes: 0.3 });
         break;
       case 'sleep':
         Object.assign(T, { eyes: 0, headY: 0.4, headZ: 0.1 });
-        break;
-      case 'look':
-        T.headY = Math.sin(this.time * 0.8) * 0.6;
         break;
       default:
     }
@@ -280,11 +305,11 @@ export class Avatar {
     const T = this._targets();
     for (const k of JOINTS) {
       const rate = k === 'pitch' || k === 'rootY' ? 5 : k === 'eyes' ? 6 : 8;
-      J[k] = damp(J[k], T[k], rate, dt);
+      J[k] = k in this.lock ? this.lock[k] : damp(J[k], T[k], rate, dt);
     }
 
     // turning
-    this.yaw += wrapAngle(this.yawTarget - this.yaw) * (1 - Math.exp(-dt * 9));
+    this.yaw += wrapAngle(this.yawTarget - this.yaw) * (1 - Math.exp(-dt * 10));
     this.group.rotation.y = this.yaw;
 
     // walk cycle, driven by how far the director moved us this frame
@@ -312,9 +337,9 @@ export class Avatar {
     this.legs.forEach(({ thigh, knee, side }, i) => {
       const [th, kn, phase] = legs[i];
       const swing = s * phase;
-      thigh.rotation.x = th - w * swing * 0.5;
+      thigh.rotation.x = th - w * swing * 0.55;
       thigh.rotation.y = side * J.spread;
-      knee.rotation.x = kn + w * Math.max(0, phase * c) * 0.75;
+      knee.rotation.x = kn + w * Math.max(0, phase * c) * 0.8;
     });
 
     const busyR = ['type', 'read', 'phone', 'pour', 'wipe', 'vacuum', 'wave', 'stretch', 'carry'].includes(this.activity);
@@ -323,11 +348,11 @@ export class Avatar {
     r.shoulder.rotation.x = J.rShX + (busyR ? 0 : w * s * 0.4);
     r.shoulder.rotation.z = J.rShZ * r.side;
     r.elbow.rotation.x = J.rElX;
-    r.elbow.rotation.z = J.rElZ;
+    r.elbow.rotation.z = J.rElZ * r.side;
     l.shoulder.rotation.x = J.lShX - (busyL ? 0 : w * s * 0.4);
     l.shoulder.rotation.z = J.lShZ * l.side;
     l.elbow.rotation.x = J.lElX;
-    l.elbow.rotation.z = J.lElZ;
+    l.elbow.rotation.z = J.lElZ * l.side;
 
     // per-activity motion on top of the pose
     switch (this.activity) {
@@ -344,13 +369,13 @@ export class Avatar {
         r.elbow.rotation.x += Math.sin(t * 3.2) * 0.14;
         break;
       case 'phone':
-        r.elbow.rotation.z = Math.max(0, Math.sin(t * 2.1)) * 0.06;
+        r.elbow.rotation.x += Math.max(0, Math.sin(t * 2.1)) * 0.05; // thumb flick
         break;
       case 'read':
-        if (t % 7 < 0.5) l.elbow.rotation.z = Math.sin((t % 7) * Math.PI * 2) * 0.25; // page turn
+        if (t % 7 < 0.5) l.elbow.rotation.x += Math.sin((t % 7) * Math.PI * 2) * 0.12; // page turn
         break;
       case 'wave':
-        r.elbow.rotation.z = Math.sin(t * 11) * 0.45;
+        r.elbow.rotation.z += Math.sin(t * 11) * 0.45;
         break;
       default:
     }
@@ -369,14 +394,70 @@ export class Avatar {
     }
     this.mouth.scale.set(1 + J.mouth * 0.4, 1 + J.mouth * 1.8, 1);
 
+    this.pour = damp(this.pour, this.pouring ? 1 : 0, 5, dt);
+    this._placeItems();
+
     if (this.bubbleTime > 0) {
       this.bubbleTime -= dt;
       if (this.bubbleTime <= 0) this.bubble = null;
     }
   }
 
+  _placeItems() {
+    const names = Object.keys(this.items);
+    if (!names.length) return;
+    this.group.updateMatrixWorld(true);
+    const [r, l] = this.arms;
+    const handR = r.hand.getWorldPosition(_hr);
+    const handL = l.hand.getWorldPosition(_hl);
+    const eyes = this.head.localToWorld(_eye.set(0, 0.15, 0.16));
+    const headUp = _up.set(0, 1, 0).applyQuaternion(this.head.getWorldQuaternion(_q));
+    for (const name of names) {
+      const { object, mode } = this.items[name];
+      if (mode === 'book') {
+        // pages turned to the eyes; each hand grips an outer edge near the
+        // bottom, so the forearms come up from underneath instead of through it
+        const across = _x.subVectors(handR, handL).normalize();
+        const mid = _p.addVectors(handR, handL).multiplyScalar(0.5);
+        const toEyes = _z.subVectors(eyes, mid);
+        toEyes.addScaledVector(across, -toEyes.dot(across)).normalize();
+        const up = _y.crossVectors(toEyes, across);
+        if (up.dot(headUp) < 0) {
+          up.negate();
+          across.negate();
+        }
+        object.position.copy(mid).addScaledVector(up, 0.06).addScaledVector(toEyes, 0.03);
+        object.quaternion.setFromRotationMatrix(_m.makeBasis(across, up, toEyes));
+      } else if (mode === 'phone') {
+        // gripped low in the right hand, screen to the eyes, top towards the top of the head
+        const toEyes = _z.subVectors(eyes, handR).normalize();
+        const up = _y.copy(headUp).addScaledVector(toEyes, -headUp.dot(toEyes)).normalize();
+        const across = _x.crossVectors(up, toEyes);
+        object.position.copy(handR).addScaledVector(toEyes, 0.03).addScaledVector(up, 0.045);
+        object.quaternion.setFromRotationMatrix(_m.makeBasis(across, up, toEyes));
+      } else if (mode === 'can') {
+        // hangs from the grip; tips forward to pour
+        object.position.copy(handR);
+        object.quaternion.setFromEuler(_e.set(this.pour * 1.05, this.yaw, 0, 'YXZ'));
+      }
+      object.updateMatrixWorld(true);
+    }
+  }
+
   // called by whoever moves the avatar, so the legs keep pace with the floor
   stride(distance) {
-    this.walkPhase += distance * 8.2;
+    this.walkPhase += distance * 4.8; // ~2 steps a second at walking pace
   }
 }
+
+const _hr = new THREE.Vector3();
+const _hl = new THREE.Vector3();
+const _eye = new THREE.Vector3();
+const _up = new THREE.Vector3();
+const _x = new THREE.Vector3();
+const _y = new THREE.Vector3();
+const _z = new THREE.Vector3();
+const _p = new THREE.Vector3();
+const _q = new THREE.Quaternion();
+const _e = new THREE.Euler();
+const _m = new THREE.Matrix4();

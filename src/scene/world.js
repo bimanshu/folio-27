@@ -634,11 +634,13 @@ export class World {
     // the character, then everything that reacts to what he's doing
     this.life.update(dt);
     const asleep = this.life.asleep;
-    const night = k.interior;
+    // lights come on as soon as dark mode starts, and grow brighter as the sky darkens
+    const dark = this.phase !== 'day' && this.phase !== 'sunrise';
+    const night = Math.max(k.interior, dark ? 0.6 : 0);
 
-    // lamp and candle come on in the evening and go off when he sleeps; a
+    // lamp and candle come on with dark mode and go off when he sleeps; a
     // click overrides that until the next change
-    const lampAuto = night > 0.5 && !asleep;
+    const lampAuto = dark && !asleep;
     if (lampAuto !== this.lampAuto) this.lampOverride = null;
     this.lampAuto = lampAuto;
     const lampOn = this.lampOverride ?? lampAuto;
@@ -647,7 +649,7 @@ export class World {
     this.lamp.shadeMat.emissiveIntensity = this.lampLevel * 0.9;
     this.lamp.glow.material.opacity = this.lampLevel * 0.7 * night;
 
-    const candleAuto = night > 0.5 && !asleep;
+    const candleAuto = dark && !asleep;
     if (candleAuto !== this.candleAuto) this.candleOverride = null;
     this.candleAuto = candleAuto;
     const candleLit = this.candleOverride ?? candleAuto;

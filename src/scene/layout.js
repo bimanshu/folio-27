@@ -28,34 +28,45 @@ export const PLANTS = {
   palm: [-2.25, -1.28],
   snake: [2.62, -1.35],
   poinsettia: [1.17, -1.42], // on the desk
-  flowers: [-0.86, -1.47], // on the desk
+  flowers: [-0.86, -1.42], // on the desk
 };
 
 export const VACUUM_DOCK = { x: 1.72, z: -1.56 };
 export const CAN_HOME = { x: 2.12, z: -1.47 };
 
-const face = (fromX, fromZ, toX, toZ) => Math.atan2(toX - fromX, toZ - fromZ);
+// Where to stand, facing `yaw`, so the watering can's spout is right over a
+// pot. While pouring, the spout is `reach` ahead of him and `side` to his
+// right: low over floor pots, arm out over the desk for the ones up there.
+const POUR = { floor: [0.47, 0.16], desk: [0.574, 0.173] };
+const pourSpot = (plant, yaw, [reach, side]) => {
+  const [px, pz] = PLANTS[plant];
+  return { x: px - reach * Math.sin(yaw) + side * Math.cos(yaw), z: pz - reach * Math.cos(yaw) - side * Math.sin(yaw), yaw };
+};
 
 // Standing spots the character walks to, with the way they face once there.
 export const SPOTS = {
   desk: { x: CHAIR.x, z: CHAIR.restZ + 0.5, yaw: Math.PI }, // in front of the chair
   sofa: { x: -1.55, z: SOFA.z, yaw: -Math.PI / 2 },
   bed: { x: 2.0, z: 0.2, yaw: 0 },
-  palm: { x: -1.72, z: -0.74, yaw: face(-1.72, -0.74, ...PLANTS.palm) },
-  snake: { x: 2.18, z: -0.86, yaw: face(2.18, -0.86, ...PLANTS.snake) },
-  poinsettia: { x: 1.17, z: -0.6, yaw: Math.PI },
-  flowers: { x: -0.86, z: -0.6, yaw: Math.PI },
+  // side-on where there's room, so the can stays on the side you're looking from
+  palm: pourSpot('palm', Math.PI, POUR.floor),
+  snake: pourSpot('snake', Math.PI / 2, POUR.floor),
+  poinsettia: pourSpot('poinsettia', Math.PI, POUR.desk),
+  flowers: pourSpot('flowers', Math.PI, POUR.desk),
   can: { x: CAN_HOME.x - 0.1, z: -1.02, yaw: Math.PI },
   vacuum: { x: VACUUM_DOCK.x, z: -1.08, yaw: Math.PI },
 };
 
 // Where to sit / lie (hip position + facing). Lying characters face up with
-// the head towards their local -z.
+// the head towards their local -z. Leg shapes are [knee lift, shin drop] in
+// radians from straight out: `sitLegs` once both legs are up and he's still
+// sitting, `legs` lying down. `lean` curls the shoulders up onto the pillow.
 export const SEATS = {
   sofa: { x: SOFA.x + 0.12, z: SOFA.z, yaw: Math.PI / 2, y: SOFA.seat + 0.012 },
-  sofaLie: { x: SOFA.x + 0.1, z: 0.55, yaw: 0, y: SOFA.seat + 0.15 },
+  // the sofa is shorter than he is: knees up, feet on the cushion
+  sofaLie: { x: SOFA.x + 0.17, z: 0.7, yaw: 0, y: SOFA.seat + 0.15, sitLegs: [0.97, 1.2], legs: [0.5, 1.17], lean: 0.1 },
   bed: { x: 2.0, z: BED.z - BED.width / 2 + 0.2, yaw: Math.PI, y: BED.top + 0.012 },
-  bedLie: { x: 2.1, z: BED.z, yaw: -Math.PI / 2, y: BED.top + 0.15 },
+  bedLie: { x: 2.1, z: BED.z, yaw: -Math.PI / 2, y: BED.top + 0.15, sitLegs: [0, 0], legs: [0, 0], lean: 0.15 },
 };
 
 // Spots along the desk edge for wiping it down.

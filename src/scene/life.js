@@ -1,6 +1,7 @@
 import * as THREE from 'three';
-import { CHAIR, DESK, SEATS, SPOTS, VACUUM_ROUTE, WIPE_SPOTS } from './layout.js';
+import { BED, CHAIR, DESK, PLANTS, SEATS, SPOTS, VACUUM_ROUTE, WIPE_SPOTS } from './layout.js';
 import { findPath } from './nav.js';
+import { legJoints } from './character.js';
 import { cloth, openBook, phone } from './furniture.js';
 
 // The character's day: what he does next, how he gets there, and what
@@ -11,13 +12,14 @@ const ease = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
 const lerp = (a, b, t) => a + (b - a) * t;
 const rand = (a, b) => a + Math.random() * (b - a);
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+const H = Math.PI / 2;
 // shortest turn between two headings; a half turn always goes the same way
 const turnBy = (from, to) => {
   const d = wrap(to - from);
   return Math.abs(d) > Math.PI - 0.02 ? Math.PI : d;
 };
 
-export const BED_SCROLL_SECONDS = 240; // scrolling in bed before dozing off
+export const BED_SCROLL_SECONDS = 60; // a minute of reels in bed, then he dozes off
 export const NIGHT_AWAKE_SECONDS = 390; // up again after being woken, then back to bed
 
 const LABELS = {
@@ -39,8 +41,9 @@ export class Life {
     this.phone = phone();
     this.cloth = cloth();
     this.drops = [];
-    this.dropGeo = new THREE.SphereGeometry(0.012, 6, 4);
-    this.dropMat = new THREE.MeshBasicMaterial({ color: '#8fd3ff' });
+    // water drops, stretched along the fall so the pour reads as a stream
+    this.dropGeo = new THREE.SphereGeometry(0.012, 8, 6).scale(1, 2.2, 1);
+    this.dropMat = new THREE.MeshBasicMaterial({ color: '#4fa9e6', transparent: true, opacity: 0.85 });
 
     this.mode = 'day'; // day | evening | bedtime | night (awake after being woken)
     this.asleep = false;
@@ -100,7 +103,7 @@ export class Life {
     };
   }
 
-  walk(target, { speed = 0.95, activity = null } = {}) {
+  walk(target, { speed = 1.3, activity = null } = {}) {
     const a = this.a;
     let path = [];
     let i = 0;
@@ -124,7 +127,7 @@ export class Life {
         }
         const heading = Math.atan2(dx, dz);
         a.yawTarget = heading;
-        if (Math.abs(wrap(a.yaw - heading)) > 0.9) {
+        if (Math.abs(wrap(a.yaw - heading)) > 1.25) {
           a.moving = false; // turn on the spot first
           return false;
         }
@@ -152,6 +155,7 @@ export class Life {
     const a = this.a;
     a.drop('book');
     a.drop('phone');
+    this.phone.group.removeFromParent(); // pockets it if it was left on the bed
     const loc = this.location;
     if (loc === 'standing') return;
     if (loc === 'desk') {
@@ -172,12 +176,8 @@ export class Life {
       });
       return;
     }
+    if (loc === 'sofaLie' || loc === 'bedLie') yield* this.sitUp(loc);
     this.location = 'standing';
-    if (loc === 'sofaLie' || loc === 'bedLie') {
-      const seat = loc === 'sofaLie' ? SEATS.sofa : SEATS.bed;
-      yield* this.sitUp(seat);
-      this.location = 'standing';
-    }
     const spot = loc.startsWith('sofa') ? SPOTS.sofa : SPOTS.bed;
     const from = a.position.clone();
     a.base = 'stand';
@@ -188,20 +188,51 @@ export class Life {
     });
   }
 
-  *sitUp(seat) {
+  // Lying → sitting on the edge: upper body comes up, then the legs swing
+  // off one at a time.
+  *sitUp(lieKey) {
     const a = this.a;
-    const from = a.position.clone();
-    const y0 = a.yaw;
-    const turn = turnBy(y0, seat.yaw);
+    const name = lieKey === 'sofaLie' ? 'sofa' : 'bed';
+    const seat = SEATS[name];
+    const lie = SEATS[lieKey];
+    const [la, lb] = lie.legs;
+    const [sa, sb] = lie.sitLegs;
+    a.activity = 'idle';
+    const r0 = a.J.rootY;
+    a.lock = {};
+    const legs = (side, lift, drop, pitch) => {
+      const j = legJoints(lift, drop, pitch);
+      a.lock[side + 'Thigh'] = j.thigh;
+      a.lock[side + 'Knee'] = j.knee;
+    };
+    yield this.tween(1.2, (e) => {
+      const p = -H * (1 - e);
+      a.lock.pitch = p;
+      a.lock.rootY = lerp(r0, seat.y, e);
+      for (const side of ['r', 'l']) legs(side, lerp(la, sa, e), lerp(lb, sb, e), p);
+    });
     a.base = 'sit';
     a.seatY = seat.y;
-    a.activity = 'idle';
-    yield this.tween(1.1, (e) => {
-      a.position.x = lerp(from.x, seat.x, e);
-      a.position.z = lerp(from.z, seat.z, e);
-      a.yaw = a.yawTarget = y0 + turn * e;
+    const turn = turnBy(a.yaw, seat.yaw);
+    const [first, second] = turn > 0 ? ['r', 'l'] : ['l', 'r'];
+    const y0 = a.yaw;
+    const from = a.position.clone();
+    const mid = { x: lerp(lie.x, seat.x, 0.5), z: lerp(lie.z, seat.z, 0.5) };
+    // each leg lifts over the edge and comes down to the floor
+    yield this.tween(0.7, (e) => {
+      legs(first, lerp(sa, 0, e) + 0.25 * Math.sin(e * Math.PI), lerp(sb, H, e), 0);
+      a.yaw = a.yawTarget = y0 + turn * 0.5 * e;
+      a.position.x = lerp(from.x, mid.x, e);
+      a.position.z = lerp(from.z, mid.z, e);
     });
-    this.location = seat === SEATS.sofa ? 'sofa' : 'bed';
+    yield this.tween(0.7, (e) => {
+      legs(second, lerp(sa, 0, e) + 0.25 * Math.sin(e * Math.PI), lerp(sb, H, e), 0);
+      a.yaw = a.yawTarget = y0 + turn * (0.5 + 0.5 * e);
+      a.position.x = lerp(mid.x, seat.x, e);
+      a.position.z = lerp(mid.z, seat.z, e);
+    });
+    a.lock = {};
+    this.location = name;
   }
 
   *sitDesk() {
@@ -249,23 +280,58 @@ export class Life {
     });
   }
 
+  // Sitting on the edge → lying down, the way people actually get into bed:
+  // one leg up, then the other, then the upper body goes down to rest.
   *lieOn(name) {
     const lieKey = name === 'sofa' ? 'sofaLie' : 'bedLie';
     if (this.location === lieKey) return;
     yield* this.sitOn(name);
     const a = this.a;
     const lie = SEATS[lieKey];
-    const from = a.position.clone();
+    const [sa, sb] = lie.sitLegs;
+    const [la, lb] = lie.legs;
+    a.activity = 'idle';
+    yield this.wait(0.35, 'idle');
     const y0 = a.yaw;
     const turn = turnBy(y0, lie.yaw);
+    // the leg on the side he's turning towards goes up first
+    const [first, second] = turn > 0 ? ['l', 'r'] : ['r', 'l'];
+    const from = a.position.clone();
+    const mid = { x: lerp(from.x, lie.x, 0.45), z: lerp(from.z, lie.z, 0.45) };
+    a.lock = {};
+    const legs = (side, lift, drop, pitch) => {
+      const j = legJoints(lift, drop, pitch);
+      a.lock[side + 'Thigh'] = j.thigh;
+      a.lock[side + 'Knee'] = j.knee;
+    };
+    // each leg lifts over the edge and settles on the mattress
+    yield this.tween(0.85, (e) => {
+      legs(first, lerp(0, sa, e) + 0.3 * Math.sin(e * Math.PI), lerp(H, sb, e), 0);
+      a.yaw = a.yawTarget = y0 + turn * 0.45 * e;
+      a.position.x = lerp(from.x, mid.x, e);
+      a.position.z = lerp(from.z, mid.z, e);
+    });
+    yield this.tween(0.85, (e) => {
+      legs(second, lerp(0, sa, e) + 0.3 * Math.sin(e * Math.PI), lerp(H, sb, e), 0);
+      a.yaw = a.yawTarget = y0 + turn * (0.45 + 0.55 * e);
+      a.position.x = lerp(mid.x, lie.x, e);
+      a.position.z = lerp(mid.z, lie.z, e);
+    });
+    yield this.wait(0.3, 'idle');
+    // lean back onto the pillow; the legs keep their place on the mattress
+    const r0 = a.J.rootY;
+    yield this.tween(1.5, (e) => {
+      const p = -H * e;
+      a.lock.pitch = p;
+      a.lock.rootY = lerp(r0, lie.y, e);
+      for (const side of ['r', 'l']) legs(side, lerp(sa, la, e), lerp(sb, lb, e), p);
+    });
     a.base = 'lie';
     a.lieY = lie.y;
+    a.lieLegs = lie.legs;
+    a.lieLean = lie.lean;
+    a.lock = {};
     this.location = lieKey;
-    yield this.tween(1.3, (e) => {
-      a.position.x = lerp(from.x, lie.x, e);
-      a.position.z = lerp(from.z, lie.z, e);
-      a.yaw = a.yawTarget = y0 + turn * e;
-    });
   }
 
   *chairTo(z) {
@@ -287,7 +353,7 @@ export class Life {
     this.label = 'grabbing a book';
     if (lie) yield* this.lieOn('sofa');
     else yield* this.sitOn('sofa');
-    yield this.call(() => this.a.hold('book', this.book, 'torso', [0, 0.22, 0.31], [0.6, Math.PI, 0]));
+    yield this.call(() => this.a.hold('book', this.book, 'book'));
     yield this.wait(seconds, 'read', LABELS.read);
     yield this.call(() => this.a.drop('book'));
   }
@@ -301,7 +367,7 @@ export class Life {
     yield this.wait(0.4, 'idle', LABELS.water);
     yield this.call(() => {
       const can = this.w.can.group;
-      a.hold('can', can, 'hand', [0, 0, 0], [0, 0, 0]);
+      a.hold('can', can, 'can');
       a.activity = 'carry';
     });
     for (const plant of ['snake', 'poinsettia', 'flowers', 'palm']) {
@@ -317,11 +383,14 @@ export class Life {
     return {
       start: () => {
         this.a.activity = 'pour';
-        this.pouring = true;
+        this.a.pouring = true;
+        this.a.pourReach = ON_DESK.includes(plant);
+        this.pouring = plant;
       },
       update: (dt, t) => t >= seconds,
       end: () => {
         this.pouring = false;
+        this.a.pouring = false;
         this.a.activity = 'carry';
         this.w.bounce(plant, 0.1);
       },
@@ -393,7 +462,7 @@ export class Life {
     this.label = night ? 'off to bed' : 'taking a break';
     yield* this.lieOn('bed');
     yield this.call(() => {
-      this.a.hold('phone', this.phone.group, 'torso', [-0.05, 0.36, 0.3], [0.75, Math.PI, 0]);
+      this.a.hold('phone', this.phone.group, 'phone');
       if (night) this.a.say('one more reel…', 3);
     });
     yield this.wait(seconds, 'phone', LABELS.phone);
@@ -401,9 +470,15 @@ export class Life {
       yield this.call(() => this.a.drop('phone'));
       return;
     }
-    // dozing off: eyes get heavy, phone goes down, blanket comes up
+    // dozing off: eyes get heavy, the phone sinks to his chest and he puts it
+    // down beside him, then the blanket comes up
     yield this.wait(4, 'groggy', 'dozing off');
-    yield this.call(() => this.a.drop('phone'));
+    yield this.call(() => {
+      const ph = this.a.drop('phone');
+      ph.position.set(2.5, BED.top + 0.006, BED.z - 0.34);
+      ph.rotation.set(H, H + 0.3, 0, 'YXZ');
+      this.w.scene.add(ph);
+    });
     yield this.tween(1.6, (e) => this.w.setBlanket(e));
     yield this.call(() => {
       this.asleep = true;
@@ -419,7 +494,10 @@ export class Life {
     a.say(greeting, 3);
     yield this.wait(1.4, 'groggy', 'waking up');
     yield this.tween(1, (e) => this.w.setBlanket(1 - e));
-    if (this.location === 'bedLie') yield* this.sitUp(SEATS.bed);
+    // picks the phone up from beside him and pockets it once he's sitting up
+    if (this.phone.group.parent && !a.items.phone) yield this.call(() => a.hold('phone', this.phone.group, 'phone'));
+    if (this.location === 'bedLie') yield* this.sitUp('bedLie');
+    yield this.call(() => a.drop('phone'));
     yield this.wait(2.2, 'stretch');
     yield this.wait(0.8, 'groggy');
   }
@@ -470,6 +548,8 @@ export class Life {
     a.drop('book');
     a.drop('phone');
     this.pouring = false;
+    a.pouring = false;
+    a.lock = {};
     if (this.wiping) this.putAwayCloth();
     if (a.items.can) {
       yield* this.standUp();
@@ -675,23 +755,36 @@ export class Life {
       this.phone.light.intensity = this.w.interior * 0.35;
     }
 
-    // water from the spout
-    if (this.pouring) {
-      this.w.can.tip.getWorldPosition(_v);
-      if (Math.random() < 0.7) {
-        const d = new THREE.Mesh(this.dropGeo, this.dropMat);
-        d.position.copy(_v);
-        const f = new THREE.Vector3(Math.sin(a.yaw), 0, Math.cos(a.yaw));
-        d.userData.v = f.multiplyScalar(0.35).add(new THREE.Vector3((Math.random() - 0.5) * 0.06, -0.1, 0));
-        this.w.scene.add(d);
-        this.drops.push(d);
+    // water leaves the spout the way it points, falls under gravity and lands
+    // in the soil (the spot is chosen so the spout is over the pot, so the
+    // sideways nudge needed is small)
+    if (this.pouring && a.pour > 0.6) {
+      const [px, pz] = PLANTS[this.pouring];
+      const soil = (ON_DESK.includes(this.pouring) ? DESK.top : 0) + SOIL[this.pouring];
+      const can = this.w.can;
+      const start = can.tip.getWorldPosition(_v);
+      const out = _dir.copy(SPOUT).applyQuaternion(can.group.quaternion);
+      const vy = out.y * POUR_SPEED;
+      const fall = start.y - soil;
+      if (fall > 0) {
+        const t = (vy + Math.sqrt(vy * vy + 2 * GRAVITY * fall)) / GRAVITY;
+        for (let i = 0; i < 2; i++) {
+          const tx = px + (Math.random() - 0.5) * 0.06;
+          const tz = pz + (Math.random() - 0.5) * 0.06;
+          const d = new THREE.Mesh(this.dropGeo, this.dropMat);
+          d.position.copy(start);
+          d.userData = { vel: new THREE.Vector3((tx - start.x) / t, vy, (tz - start.z) / t), left: t };
+          this.w.scene.add(d);
+          this.drops.push(d);
+        }
       }
     }
     this.drops = this.drops.filter((d) => {
-      d.userData.v.y -= 3.5 * dt;
-      d.position.addScaledVector(d.userData.v, dt);
-      const floor = Math.abs(d.position.z - DESK.z) < DESK.d / 2 && Math.abs(d.position.x - DESK.x) < DESK.w / 2 ? DESK.top : 0.05;
-      if (d.position.y > floor + 0.1) return true;
+      const u = d.userData;
+      u.vel.y -= GRAVITY * dt;
+      d.position.addScaledVector(u.vel, dt);
+      u.left -= dt;
+      if (u.left > 0) return true;
       d.parent?.remove(d);
       return false;
     });
@@ -699,3 +792,10 @@ export class Life {
 }
 
 const _v = new THREE.Vector3();
+const _dir = new THREE.Vector3();
+const GRAVITY = 9.8;
+const POUR_SPEED = 0.6; // how fast water leaves the spout (m/s)
+const SPOUT = new THREE.Vector3(0, Math.cos(0.95), Math.sin(0.95)); // spout axis in the can
+const ON_DESK = ['poinsettia', 'flowers'];
+// height of the soil above each plant's base, for the water to land in
+const SOIL = { palm: 0.32, snake: 0.3, poinsettia: 0.125, flowers: 0.115 };

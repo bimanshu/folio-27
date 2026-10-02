@@ -3,12 +3,14 @@ import { HUBS, OBSTACLES } from './layout.js';
 // Tiny navigation: straight lines between open-floor junctions, avoiding
 // furniture footprints (inflated by the character's radius).
 const RADIUS = 0.16;
+// clearance kept from furniture you're walking up to (e.g. leaning over the desk)
+const CLOSE = 0.05;
 
-function segmentHitsBox(ax, az, bx, bz, [x0, z0, x1, z1]) {
-  x0 -= RADIUS;
-  z0 -= RADIUS;
-  x1 += RADIUS;
-  z1 += RADIUS;
+function segmentHitsBox(ax, az, bx, bz, [x0, z0, x1, z1], r) {
+  x0 -= r;
+  z0 -= r;
+  x1 += r;
+  z1 += r;
   // Liang–Barsky clip of the segment against the box
   let t0 = 0;
   let t1 = 1;
@@ -29,15 +31,21 @@ function segmentHitsBox(ax, az, bx, bz, [x0, z0, x1, z1]) {
   return clip(-dx, ax - x0) && clip(dx, x1 - ax) && clip(-dz, az - z0) && clip(dz, z1 - az) && t1 - t0 > 1e-4;
 }
 
-function inside(x, z, [x0, z0, x1, z1]) {
-  return x > x0 - RADIUS && x < x1 + RADIUS && z > z0 - RADIUS && z < z1 + RADIUS;
+function inside({ x, z }, [x0, z0, x1, z1], r) {
+  return x > x0 - r && x < x1 + r && z > z0 - r && z < z1 + r;
 }
 
 // extra: dynamic obstacles (like wherever the chair has been rolled to)
 export function findPath(from, to, extra = []) {
-  // ignore any box the start or end point is already standing in
-  const boxes = [...OBSTACLES, ...extra].filter((b) => !inside(from.x, from.z, b) && !inside(to.x, to.z, b));
-  const clear = (a, b) => boxes.every((o) => !segmentHitsBox(a.x, a.z, b.x, b.z, o));
+  // furniture the start or end is right up against only needs a little
+  // clearance; anything they're standing inside is ignored
+  const boxes = [];
+  for (const box of [...OBSTACLES, ...extra]) {
+    const near = (p, r) => inside(p, box, r);
+    if (near(from, CLOSE) || near(to, CLOSE)) continue;
+    boxes.push([box, near(from, RADIUS) || near(to, RADIUS) ? CLOSE : RADIUS]);
+  }
+  const clear = (a, b) => boxes.every(([box, r]) => !segmentHitsBox(a.x, a.z, b.x, b.z, box, r));
   if (clear(from, to)) return [to];
 
   const nodes = [from, ...HUBS.map(([x, z]) => ({ x, z })), to];
